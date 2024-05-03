@@ -1,21 +1,27 @@
+// Copyright 2024 Keyfactor
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package main
 
 import (
-	"log"
+	"fmt"
 
-	"keyfactor_auth/auth_providers/keycloak"
+	"keyfactor_auth_client/pkg"
 )
 
 func main() {
-	//try client auth
-	keyfactorAuthConfig := keycloak.CommandAuthKeyCloakClientCredentials{}
-	aErr := keyfactorAuthConfig.Authenticate()
-	if aErr != nil {
-		log.Fatalf("[ERROR] %s\n", aErr)
-	}
-	log.Println("[INFO] Successfully authenticated with Keyfactor")
-	log.Println("[INFO] Token: ", keyfactorAuthConfig.AccessToken)
-	log.Println("[INFO] Refresh Token: ", keyfactorAuthConfig.RefreshToken)
-	log.Println("[INFO] Token Expiry: ", keyfactorAuthConfig.Expiry)
-
+	fmt.Println("Version:", pkg.Version)   // print the package version
+	fmt.Println("Build:", pkg.BuildTime)   // print the package build
+	fmt.Println("Commit:", pkg.CommitHash) // print the package commit
 }

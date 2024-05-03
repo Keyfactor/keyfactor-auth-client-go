@@ -1,6 +1,16 @@
 # keyfactor-auth-client-go
 Client library for authenticating to Keyfactor Command
 
+<!-- toc -->
+
+- [Environment Variables](#environment-variables)
+  * [Global](#global)
+  * [Active Directory](#active-directory)
+  * [Keycloak](#keycloak)
+    + [Client Credentials](#client-credentials)
+
+<!-- tocstop -->
+
 ## Environment Variables
 
 ### Global
