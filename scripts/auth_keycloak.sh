@@ -39,7 +39,7 @@ function authClientCredentials(){
   client_id="${KEYFACTOR_CLIENT_ID}"
   client_secret="${KEYFACTOR_CLIENT_SECRET}"
   grant_type="client_credentials"
-  auth_url="https://$KEYFACTOR_AUTH_HOSTNAME:$KEYFACTOR_AUTH_PORT/realms/$KEYFFACTOR_AUTH_REALM/protocol/openid-connect/token"
+  auth_url="https://$KEYFACTOR_AUTH_HOSTNAME:${KEYFACTOR_AUTH_PORT:-8444}/realms/${KEYFFACTOR_AUTH_REALM:-Keyfactor}/protocol/openid-connect/token"
 
   curl -X POST $auth_url \
       --header 'Content-Type: application/x-www-form-urlencoded' \
