@@ -51,6 +51,10 @@ func (c *CommandAuthConfig) ValidateAuthConfig() error {
 func (c *CommandAuthConfig) Authenticate() error {
 	// call /Status/Endpoints API to validate credentials
 
+	if c.HttpClient == nil {
+		c.HttpClient = &http.Client{}
+	}
+
 	//create headers for request
 	headers := map[string]string{
 		"Content-Type":               "application/json",

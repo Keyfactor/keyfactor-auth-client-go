@@ -35,7 +35,6 @@ const (
 )
 
 func (c *CommandAuthKeyCloakClientCredentials) Authenticate() error {
-	c.HttpClient = &http.Client{}
 	c.AuthType = "client_credentials"
 	cErr := c.ValidateAuthConfig()
 	if cErr != nil {
@@ -60,12 +59,7 @@ func (c *CommandAuthKeyCloakClientCredentials) Authenticate() error {
 	return nil
 }
 
-func (c *CommandAuthKeyCloakClientCredentials) ValidateAuthConfig() error {
-	cErr := c.CommandAuthConfigKeyCloak.ValidateAuthConfig()
-	if cErr != nil {
-		return cErr
-	}
-
+func (c *CommandAuthKeyCloakClientCredentials) setClientId() error {
 	if c.ClientID == "" {
 		if clientID, ok := os.LookupEnv(EnvKeyfactorClientID); ok {
 			c.ClientID = clientID
@@ -73,6 +67,10 @@ func (c *CommandAuthKeyCloakClientCredentials) ValidateAuthConfig() error {
 			return fmt.Errorf("client_id or environment variable %s is required", EnvKeyfactorClientID)
 		}
 	}
+	return nil
+}
+
+func (c *CommandAuthKeyCloakClientCredentials) setClientSecret() error {
 	if c.ClientSecret == "" {
 		if clientSecret, ok := os.LookupEnv(EnvKeyfactorClientSecret); ok {
 			c.ClientSecret = clientSecret
@@ -80,6 +78,10 @@ func (c *CommandAuthKeyCloakClientCredentials) ValidateAuthConfig() error {
 			return fmt.Errorf("client_secret or environment variable %s is required", EnvKeyfactorClientSecret)
 		}
 	}
+	return nil
+}
+
+func (c *CommandAuthKeyCloakClientCredentials) setRealm() error {
 	if c.Realm == "" {
 		if realm, ok := os.LookupEnv(EnvKeyfactorAuthRealm); ok {
 			c.Realm = realm
@@ -87,19 +89,47 @@ func (c *CommandAuthKeyCloakClientCredentials) ValidateAuthConfig() error {
 			c.Realm = DefaultKeyfactorRealm
 		}
 	}
+	return nil
+}
 
+func (c *CommandAuthKeyCloakClientCredentials) setTokenURL() error {
 	if c.TokenURL == "" {
 		if tokenURL, ok := os.LookupEnv(EnvKeyfactorAuthTokenURL); ok {
 			c.TokenURL = tokenURL
 		} else {
-			c.TokenURL = fmt.Sprintf(
-				"https://%s:%s/realms/%s/protocol/openid-connect/token",
-				c.AuthHostName,
-				c.AuthPort,
-				c.Realm,
-			)
+			return fmt.Errorf("token_url or environment variable %s is required", EnvKeyfactorAuthTokenURL)
 		}
 	}
+	return nil
+}
+
+func (c *CommandAuthKeyCloakClientCredentials) ValidateAuthConfig() error {
+	cErr := c.CommandAuthConfigKeyCloak.ValidateAuthConfig()
+	if cErr != nil {
+		return cErr
+	}
+
+	cIdErr := c.setClientId()
+	if cIdErr != nil {
+		return cIdErr
+	}
+
+	cSecretErr := c.setClientSecret()
+	if cSecretErr != nil {
+		return cSecretErr
+	}
+
+	rErr := c.setRealm()
+	if rErr != nil {
+		return rErr
+	}
+
+	tErr := c.setTokenURL()
+	if tErr != nil {
+		return tErr
+
+	}
+
 	return nil
 }
 

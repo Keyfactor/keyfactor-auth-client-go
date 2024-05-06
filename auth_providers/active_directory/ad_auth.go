@@ -28,12 +28,39 @@ func (c *CommandAuthConfigActiveDirectory) Authenticate() error {
 	}
 
 	c.AuthHeader = fmt.Sprintf("Basic %s", c.getBasicAuthHeader())
+
+	aErr := c.CommandAuthConfigBasic.Authenticate()
+	if aErr != nil {
+		return aErr
+	}
+
 	return nil
 }
 
 func (c *CommandAuthConfigActiveDirectory) getBasicAuthHeader() string {
-	authStr := fmt.Sprintf("%s@%s:%s", c.Domain, c.Username, c.Password)
+	authStr := fmt.Sprintf("%s@%s:%s", c.Username, c.Domain, c.Password)
 	return base64.StdEncoding.EncodeToString([]byte(authStr))
+}
+
+func (c *CommandAuthConfigActiveDirectory) parseUsernameDomain() error {
+	domainErr := fmt.Errorf("domain or environment variable %s is required", EnvKeyfactorDomain)
+	if strings.Contains(c.Username, "@") {
+		dSplit := strings.Split(c.Username, "@")
+		if len(dSplit) != 2 {
+			return domainErr
+		}
+		c.Username = dSplit[0] // remove domain from username
+		c.Domain = dSplit[1]
+	} else if strings.Contains(c.Username, "\\") {
+		dSplit := strings.Split(c.Username, "\\")
+		if len(dSplit) != 2 {
+			return domainErr
+		}
+		c.Domain = dSplit[0]
+		c.Username = dSplit[1] // remove domain from username
+	}
+
+	return nil
 }
 
 func (c *CommandAuthConfigActiveDirectory) ValidateAuthConfig() error {
@@ -50,38 +77,28 @@ func (c *CommandAuthConfigActiveDirectory) ValidateAuthConfig() error {
 		}
 	}
 
+	domainErr := c.parseUsernameDomain()
+	if domainErr != nil {
+		return domainErr
+
+	}
+
 	if c.Password == "" {
 		if password, ok := os.LookupEnv(EnvKeyfactorPassword); ok {
 			c.Password = password
 		} else {
-			return fmt.Errorf("password or environment variable KEYFACTOR_PASSWORD is required")
+			return fmt.Errorf("password or environment variable %s is required", EnvKeyfactorPassword)
 		}
 	}
 
 	if c.Domain == "" {
-		if domain, ok := os.LookupEnv("KEYFACTOR_DOMAIN"); ok {
+		if domain, ok := os.LookupEnv(EnvKeyfactorDomain); ok {
 			c.Domain = domain
 		} else {
-			//check if domain is in username with @ or \\
-			if strings.Contains(c.Username, "@") {
-				domain := strings.Split(c.Username, "@")
-				if len(domain) != 2 {
-					return fmt.Errorf("domain or environment variable %s is required", EnvKeyfactorDomain)
-				}
-				c.Username = domain[0] // remove domain from username
-				c.Domain = domain[1]
-			} else if strings.Contains(c.Username, "\\") {
-				domain := strings.Split(c.Username, "\\")
-				if len(domain) != 2 {
-					return fmt.Errorf("domain or environment variable %s is required", EnvKeyfactorDomain)
-				}
-				c.Domain = domain[0]
-				c.Username = domain[1] // remove domain from username
-			} else {
-				return fmt.Errorf("domain or environment variable %s is required", EnvKeyfactorDomain)
-			}
+			return domainErr
 		}
 	}
+
 	return nil
 }
 

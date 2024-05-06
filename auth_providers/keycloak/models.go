@@ -55,7 +55,6 @@ func (c *CommandAuthConfigKeyCloak) ValidateAuthConfig() error {
 		}
 	}
 	return nil
-
 }
 
 type CommandAuthKeyCloakClientCredentials struct {
