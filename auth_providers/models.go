@@ -24,12 +24,16 @@ type CommandAuthConfig struct {
 	CommandHostName string `json:"command_host_name"`
 	CommandPort     string `json:"command_port"`
 	CommandAPIPath  string `json:"command_api_path"`
+	CommandVersion  string `json:"command_version"`
 	HttpClient      *http.Client
 }
 
 const (
 	DefaultCommandPort    = "443"
 	DefaultCommandAPIPath = "KeyfactorAPI"
+	DefaultAPIVersion     = "1"
+	DefaultAPIClientName  = "APIClient"
+	DefaultProductVersion = "10.5.0.0"
 	EnvKeyfactorHostName  = "KEYFACTOR_HOSTNAME"
 	EnvKeyfactorPort      = "KEYFACTOR_PORT"
 	EnvKeyfactorAPIPath   = "KEYFACTOR_API_PATH"

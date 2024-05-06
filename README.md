@@ -35,8 +35,8 @@ Client library for authenticating to Keyfactor Command
 |--------------------------|---------------------------------------------------------------------------------------------------------------------------------|-------------|
 | KEYFACTOR_AUTH_HOST_NAME | Hostname of Keycloak instance to authenticate to Keyfactor Command                                                              |             |
 | KEYFACTOR_AUTH_REALM     | Keyfactor Auth Realm                                                                                                            | `Keyfactor` |
+| KEYFACTOR_AUTH_SCOPES    | Scopes to request when authenticating to Keyfactor Command API                                                                  | `openid`    |
 | KEYFACTOR_ACCESS_TOKEN   | Access token to use to authenticate to Keyfactor Command API. This can be supplied directly or generated via client credentials |             |
-| KEYFACTOR_SCOPES         | Scopes to request when authenticating to Keyfactor Command API                                                                  | `openid`    |
 
 #### Client Credentials
 

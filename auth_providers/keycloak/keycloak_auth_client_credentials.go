@@ -52,6 +52,11 @@ func (c *CommandAuthKeyCloakClientCredentials) Authenticate() error {
 
 	c.AuthHeader = fmt.Sprintf("Bearer %s", token)
 
+	aErr := c.CommandAuthConfig.Authenticate()
+	if aErr != nil {
+		return aErr
+	}
+
 	return nil
 }
 
