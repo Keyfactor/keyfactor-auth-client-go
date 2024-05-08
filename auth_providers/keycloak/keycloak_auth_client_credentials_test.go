@@ -51,8 +51,10 @@ func TestCommandAuthKeyCloakClientCredentials_AuthEnvironment(t *testing.T) {
 }
 
 func checkAuthEnvClientCreds() bool {
-	if _, ok := os.LookupEnv(TestEnvIsClientAuth); ok {
-		return true
+	if isKCAuth, ok := os.LookupEnv(TestEnvIsClientAuth); ok {
+		if isKCAuth == "true" || isKCAuth == "1" {
+			return true
+		}
 	}
 	return false
 }

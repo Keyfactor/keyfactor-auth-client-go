@@ -21,7 +21,7 @@ import (
 )
 
 const (
-	EnvKeyfactorAuthHostname = "KEYFACTOR_AUTH_HOST_NAME"
+	EnvKeyfactorAuthHostname = "KEYFACTOR_AUTH_HOSTNAME"
 	EnvKeyfactorAuthPort     = "KEYFACTOR_AUTH_PORT"
 )
 

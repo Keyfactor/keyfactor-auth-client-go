@@ -1,0 +1,32 @@
+name: Go Test Workflow
+
+on: [ push ]
+
+jobs:
+  test:
+    name: Run tests
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        environment: [ "KFC_10_5_0", "KFC_11_5_0_KC" ]
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v3
+
+      - name: Set up Go
+        uses: actions/setup-go@v3
+        with:
+          go-version: 1.22
+
+      - name: Run tests
+        run: go test -v -cover ./auth_providers/...
+        env:
+          TEST_ENVIRONMENT: ${{ matrix.environment }}
+          KEYFACTOR_PASSWORD: ${{ secrets.KEYFACTOR_PASSWORD }}
+          KEYFACTOR_USERNAME: ${{ secrets.KEYFACTOR_USERNAME }}
+          KEYFACTOR_AUTH_CLIENT_ID: ${{ secrets.KEYFACTOR_AUTH_CLIENT_ID }}
+          KEYFACTOR_AUTH_CLIENT_SECRET: ${{ secrets.KEYFACTOR_AUTH_CLIENT_SECRET }}
+          KEYFACTOR_HOSTNAME: ${{ env.KEYFACTOR_HOSTNAME }}
+          KEYFACTOR_AUTH_HOSTNAME: ${{ env.KEYFACTOR_AUTH_HOSTNAME }}
+          TEST_KEYFACTOR_AD_AUTH: ${{ env.TEST_KEYFACTOR_AD_AUTH }}
+          TEST_KEYFACTOR_KC_AUTH: ${{ env.TEST_KEYFACTOR_KC_AUTH }}

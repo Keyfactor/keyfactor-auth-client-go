@@ -50,8 +50,10 @@ func TestCommandAuthActiveDirectoryCredentials_AuthEnvironment(t *testing.T) {
 }
 
 func checkAuthEnvADCreds() bool {
-	if _, ok := os.LookupEnv(TestEnvIsADAuth); ok {
-		return true
+	if isAdAuth, ok := os.LookupEnv(TestEnvIsADAuth); ok {
+		if isAdAuth == "true" || isAdAuth == "1" {
+			return true
+		}
 	}
 	return false
 }

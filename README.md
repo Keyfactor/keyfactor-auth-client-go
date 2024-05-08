@@ -5,10 +5,10 @@ Client library for authenticating to Keyfactor Command
 <!-- toc -->
 
 - [Environment Variables](#environment-variables)
-  * [Global](#global)
-  * [Active Directory](#active-directory)
-  * [Keycloak](#keycloak)
-    + [Client Credentials](#client-credentials)
+    * [Global](#global)
+    * [Active Directory](#active-directory)
+    * [Keycloak](#keycloak)
+        + [Client Credentials](#client-credentials)
 - [Test Environment Variables](#test-environment-variables)
 
 <!-- tocstop -->
@@ -33,12 +33,12 @@ Client library for authenticating to Keyfactor Command
 
 ### Keycloak
 
-| Name                     | Description                                                                                                                     | Default     |
-|--------------------------|---------------------------------------------------------------------------------------------------------------------------------|-------------|
-| KEYFACTOR_AUTH_HOST_NAME | Hostname of Keycloak instance to authenticate to Keyfactor Command                                                              |             |
-| KEYFACTOR_AUTH_REALM     | Keyfactor Auth Realm                                                                                                            | `Keyfactor` |
-| KEYFACTOR_AUTH_SCOPES    | Scopes to request when authenticating to Keyfactor Command API                                                                  | `openid`    |
-| KEYFACTOR_ACCESS_TOKEN   | Access token to use to authenticate to Keyfactor Command API. This can be supplied directly or generated via client credentials |             |
+| Name                    | Description                                                                                                                     | Default     |
+|-------------------------|---------------------------------------------------------------------------------------------------------------------------------|-------------|
+| KEYFACTOR_AUTH_HOSTNAME | Hostname of Keycloak instance to authenticate to Keyfactor Command                                                              |             |
+| KEYFACTOR_AUTH_REALM    | Keyfactor Auth Realm                                                                                                            | `Keyfactor` |
+| KEYFACTOR_AUTH_SCOPES   | Scopes to request when authenticating to Keyfactor Command API                                                                  | `openid`    |
+| KEYFACTOR_ACCESS_TOKEN  | Access token to use to authenticate to Keyfactor Command API. This can be supplied directly or generated via client credentials |             |
 
 #### Client Credentials
 
@@ -48,6 +48,7 @@ Client library for authenticating to Keyfactor Command
 | KEYFACTOR_AUTH_CLIENT_SECRET | Keyfactor Auth Client Secret |         |
 
 ## Test Environment Variables
+
 These environment variables are used to run go tests. They are not used in the actual client library.
 
 | Name                   | Description                                           | Default |
