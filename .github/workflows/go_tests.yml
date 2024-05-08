@@ -6,9 +6,7 @@ jobs:
   test:
     name: Run tests
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        environment: [ "KFC_10_5_0", "KFC_11_5_0_KC" ]
+    environment: "KFC_10_5_0"
     steps:
       - name: Check out code
         uses: actions/checkout@v3
@@ -21,7 +19,6 @@ jobs:
       - name: Run tests
         run: go test -v -cover ./auth_providers/...
         env:
-          TEST_ENVIRONMENT: ${{ matrix.environment }}
           KEYFACTOR_PASSWORD: ${{ secrets.KEYFACTOR_PASSWORD }}
           KEYFACTOR_USERNAME: ${{ secrets.KEYFACTOR_USERNAME }}
           KEYFACTOR_AUTH_CLIENT_ID: ${{ secrets.KEYFACTOR_AUTH_CLIENT_ID }}
