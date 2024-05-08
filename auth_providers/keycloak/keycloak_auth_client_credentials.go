@@ -28,8 +28,8 @@ import (
 const (
 	DefaultKeyfactorAuthPort = "8444"
 	DefaultKeyfactorRealm    = "Keyfactor"
-	EnvKeyfactorClientID     = "KEYFACTOR_CLIENT_ID"
-	EnvKeyfactorClientSecret = "KEYFACTOR_CLIENT_SECRET"
+	EnvKeyfactorClientID     = "KEYFACTOR_AUTH_CLIENT_ID"
+	EnvKeyfactorClientSecret = "KEYFACTOR_AUTH_CLIENT_SECRET"
 	EnvKeyfactorAuthRealm    = "KEYFACTOR_AUTH_REALM"
 	EnvKeyfactorAuthTokenURL = "KEYFACTOR_AUTH_TOKEN_URL"
 	EnvKeyfactorAccessToken  = "KEYFACTOR_ACCESS_TOKEN"
