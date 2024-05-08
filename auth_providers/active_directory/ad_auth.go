@@ -19,8 +19,28 @@ import (
 	"fmt"
 	"os"
 	"strings"
+
+	"keyfactor_auth_client/auth_providers"
 )
 
+const (
+	EnvKeyfactorDomain   = "KEYFACTOR_DOMAIN"
+	EnvKeyfactorUsername = "KEYFACTOR_USERNAME"
+	EnvKeyfactorPassword = "KEYFACTOR_PASSWORD"
+)
+
+// CommandAuthConfigActiveDirectory represents the configuration needed for Active Directory authentication.
+// It embeds CommandAuthConfigBasic and adds additional fields specific to Active Directory.
+type CommandAuthConfigActiveDirectory struct {
+	// CommandAuthConfig is a reference to the base configuration needed for authentication to Keyfactor Command API
+	auth_providers.CommandAuthConfigBasic
+
+	// Domain is the domain of the Active Directory used to authenticate to Keyfactor Command API
+	Domain string `json:"domain"`
+}
+
+// Authenticate performs the authentication process for Active Directory.
+// It validates the authentication configuration, generates the authentication header, and calls the basic authentication method.
 func (c *CommandAuthConfigActiveDirectory) Authenticate() error {
 	cErr := c.ValidateAuthConfig()
 	if cErr != nil {
@@ -37,11 +57,15 @@ func (c *CommandAuthConfigActiveDirectory) Authenticate() error {
 	return nil
 }
 
+// getBasicAuthHeader generates the basic authentication header value.
+// It combines the username, domain, and password with a colon separator, and encodes the resulting string in base64.
 func (c *CommandAuthConfigActiveDirectory) getBasicAuthHeader() string {
 	authStr := fmt.Sprintf("%s@%s:%s", c.Username, c.Domain, c.Password)
 	return base64.StdEncoding.EncodeToString([]byte(authStr))
 }
 
+// parseUsernameDomain parses the username to extract the domain if it's included in the username.
+// It supports two formats: "username@domain" and "domain\username".
 func (c *CommandAuthConfigActiveDirectory) parseUsernameDomain() error {
 	domainErr := fmt.Errorf("domain or environment variable %s is required", EnvKeyfactorDomain)
 	if strings.Contains(c.Username, "@") {
@@ -63,6 +87,8 @@ func (c *CommandAuthConfigActiveDirectory) parseUsernameDomain() error {
 	return nil
 }
 
+// ValidateAuthConfig validates the authentication configuration for Active Directory.
+// It checks the username, domain, and password, and retrieves them from environment variables if they're not set.
 func (c *CommandAuthConfigActiveDirectory) ValidateAuthConfig() error {
 	cErr := c.CommandAuthConfigBasic.ValidateAuthConfig()
 	if cErr != nil {
@@ -100,8 +126,4 @@ func (c *CommandAuthConfigActiveDirectory) ValidateAuthConfig() error {
 	}
 
 	return nil
-}
-
-func (c *CommandAuthConfigActiveDirectory) GetAuthHeader() string {
-	return c.AuthHeader
 }

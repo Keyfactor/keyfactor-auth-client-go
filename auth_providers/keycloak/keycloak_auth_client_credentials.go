@@ -32,11 +32,47 @@ const (
 	EnvKeyfactorClientSecret = "KEYFACTOR_CLIENT_SECRET"
 	EnvKeyfactorAuthRealm    = "KEYFACTOR_AUTH_REALM"
 	EnvKeyfactorAuthTokenURL = "KEYFACTOR_AUTH_TOKEN_URL"
+	EnvKeyfactorAccessToken  = "KEYFACTOR_ACCESS_TOKEN"
 )
 
+// CommandAuthKeyCloakClientCredentials represents the configuration needed for Keycloak authentication using client credentials.
+// It embeds CommandAuthConfigKeyCloak and adds additional fields specific to Keycloak client credentials authentication.
+type CommandAuthKeyCloakClientCredentials struct {
+	// CommandAuthConfigKeyCloak is a reference to the base configuration needed for authentication to Keyfactor Command API
+	CommandAuthConfigKeyCloak
+
+	// ClientID is the client ID for Keycloak authentication
+	ClientID string `json:"client_id;omitempty"`
+
+	// ClientSecret is the client secret for Keycloak authentication
+	ClientSecret string `json:"client_secret;omitempty"`
+
+	// AccessToken is the access token for Keycloak authentication
+	AccessToken string `json:"access_token;omitempty"`
+
+	// RefreshToken is the refresh token for Keycloak authentication
+	RefreshToken string `json:"refresh_token;omitempty"`
+
+	// Expiry is the expiry time of the access token
+	Expiry time.Time `json:"expiry;omitempty"`
+
+	// Realm is the realm for Keycloak authentication
+	Realm string `json:"realm;omitempty"`
+
+	// TokenURL is the token URL for Keycloak authentication
+	TokenURL string `json:"token_url"`
+}
+
+// Authenticate performs the authentication process for Keycloak using client credentials.
+// It validates the authentication configuration, gets the token, and calls the base authentication method.
 func (c *CommandAuthKeyCloakClientCredentials) Authenticate() error {
+	cErr := c.CommandAuthConfig.ValidateAuthConfig() // Validate base config
+	if cErr != nil {
+		return cErr
+	}
+
 	c.AuthType = "client_credentials"
-	cErr := c.ValidateAuthConfig()
+	cErr = c.ValidateAuthConfig()
 	if cErr != nil {
 		return cErr
 	}
@@ -59,6 +95,8 @@ func (c *CommandAuthKeyCloakClientCredentials) Authenticate() error {
 	return nil
 }
 
+// setClientId sets the client ID for Keycloak authentication.
+// It retrieves the client ID from environment variables if it's not set.
 func (c *CommandAuthKeyCloakClientCredentials) setClientId() error {
 	if c.ClientID == "" {
 		if clientID, ok := os.LookupEnv(EnvKeyfactorClientID); ok {
@@ -70,6 +108,8 @@ func (c *CommandAuthKeyCloakClientCredentials) setClientId() error {
 	return nil
 }
 
+// setClientSecret sets the client secret for Keycloak authentication.
+// It retrieves the client secret from environment variables if it's not set.
 func (c *CommandAuthKeyCloakClientCredentials) setClientSecret() error {
 	if c.ClientSecret == "" {
 		if clientSecret, ok := os.LookupEnv(EnvKeyfactorClientSecret); ok {
@@ -81,6 +121,8 @@ func (c *CommandAuthKeyCloakClientCredentials) setClientSecret() error {
 	return nil
 }
 
+// setRealm sets the realm for Keycloak authentication.
+// It retrieves the realm from environment variables if it's not set.
 func (c *CommandAuthKeyCloakClientCredentials) setRealm() error {
 	if c.Realm == "" {
 		if realm, ok := os.LookupEnv(EnvKeyfactorAuthRealm); ok {
@@ -92,17 +134,26 @@ func (c *CommandAuthKeyCloakClientCredentials) setRealm() error {
 	return nil
 }
 
+// setTokenURL sets the token URL for Keycloak authentication.
+// It generates the token URL if it's not set.
 func (c *CommandAuthKeyCloakClientCredentials) setTokenURL() error {
 	if c.TokenURL == "" {
 		if tokenURL, ok := os.LookupEnv(EnvKeyfactorAuthTokenURL); ok {
 			c.TokenURL = tokenURL
 		} else {
-			return fmt.Errorf("token_url or environment variable %s is required", EnvKeyfactorAuthTokenURL)
+			c.TokenURL = fmt.Sprintf(
+				"https://%s:%s/realms/%s/protocol/openid-connect/token",
+				c.AuthHostName,
+				c.AuthPort,
+				c.Realm,
+			)
 		}
 	}
 	return nil
 }
 
+// ValidateAuthConfig validates the authentication configuration for Keycloak using client credentials.
+// It checks the client ID, client secret, realm, and token URL, and retrieves them from environment variables if they're not set.
 func (c *CommandAuthKeyCloakClientCredentials) ValidateAuthConfig() error {
 	cErr := c.CommandAuthConfigKeyCloak.ValidateAuthConfig()
 	if cErr != nil {
@@ -133,7 +184,19 @@ func (c *CommandAuthKeyCloakClientCredentials) ValidateAuthConfig() error {
 	return nil
 }
 
+// GetToken gets the access token for Keycloak authentication.
+// It uses the refresh token if available and not expired, otherwise, it requests a new access token.
 func (c *CommandAuthKeyCloakClientCredentials) GetToken() (string, error) {
+	// Check if access token is set in environment variable
+	if c.AccessToken == "" {
+		if accessToken, ok := os.LookupEnv(EnvKeyfactorAccessToken); ok {
+			c.AccessToken = accessToken
+
+			// Don't try to refresh as we don't have a refresh token
+			return c.AccessToken, nil
+		}
+	}
+
 	if c.AccessToken != "" && time.Now().Before(c.Expiry) {
 		return c.AccessToken, nil
 	}
@@ -147,6 +210,7 @@ func (c *CommandAuthKeyCloakClientCredentials) GetToken() (string, error) {
 	return c.requestNewToken()
 }
 
+// requestNewToken requests a new access token for Keycloak authentication using client credentials.
 func (c *CommandAuthKeyCloakClientCredentials) requestNewToken() (string, error) {
 	formData := url.Values{}
 	formData.Set("grant_type", "client_credentials")
@@ -156,6 +220,7 @@ func (c *CommandAuthKeyCloakClientCredentials) requestNewToken() (string, error)
 	return c.doTokenRequest(formData.Encode())
 }
 
+// refreshAccessToken refreshes the access token for Keycloak authentication.
 func (c *CommandAuthKeyCloakClientCredentials) refreshAccessToken() (string, error) {
 	formData := url.Values{}
 	formData.Set("grant_type", "refresh_token")
@@ -165,6 +230,7 @@ func (c *CommandAuthKeyCloakClientCredentials) refreshAccessToken() (string, err
 	return c.doTokenRequest(formData.Encode())
 }
 
+// doTokenRequest sends a token request to Keycloak and handles the response.
 func (c *CommandAuthKeyCloakClientCredentials) doTokenRequest(data string) (string, error) {
 	requestBody := strings.NewReader(data)
 	req, reqErr := http.NewRequest("POST", c.TokenURL, requestBody)

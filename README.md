@@ -1,4 +1,5 @@
 # keyfactor-auth-client-go
+
 Client library for authenticating to Keyfactor Command
 
 <!-- toc -->
@@ -8,6 +9,7 @@ Client library for authenticating to Keyfactor Command
   * [Active Directory](#active-directory)
   * [Keycloak](#keycloak)
     + [Client Credentials](#client-credentials)
+- [Test Environment Variables](#test-environment-variables)
 
 <!-- tocstop -->
 
@@ -44,3 +46,11 @@ Client library for authenticating to Keyfactor Command
 |------------------------------|------------------------------|---------|
 | KEYFACTOR_AUTH_CLIENT_ID     | Keyfactor Auth Client ID     |         |
 | KEYFACTOR_AUTH_CLIENT_SECRET | Keyfactor Auth Client Secret |         |
+
+## Test Environment Variables
+These environment variables are used to run go tests. They are not used in the actual client library.
+
+| Name                   | Description                                           | Default |
+|------------------------|-------------------------------------------------------|---------|
+| TEST_KEYFACTOR_AD_AUTH | Set to `true` to test Active Directory authentication | false   |
+| TEST_KEYFACTOR_KC_AUTH | Set to `true` to test Keycloak authentication         | false   |

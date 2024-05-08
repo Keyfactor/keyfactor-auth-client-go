@@ -16,11 +16,22 @@ package active_directory
 
 import (
 	"fmt"
+	"os"
 	"testing"
+)
+
+const (
+	TestEnvIsADAuth = "TEST_KEYFACTOR_AD_AUTH"
 )
 
 func TestCommandAuthActiveDirectoryCredentials_AuthEnvironment(t *testing.T) {
 
+	if !checkAuthEnvADCreds() {
+		msg := "Skipping test because Keyfactor Command environment is not authenticated with Active Directory credentials"
+		t.Log(msg)
+		t.Skip(msg)
+		return
+	}
 	// Create a new CommandAuthActiveDirectoryCredentials instance
 	c := &CommandAuthConfigActiveDirectory{} //Used environment configuration
 
@@ -36,4 +47,11 @@ func TestCommandAuthActiveDirectoryCredentials_AuthEnvironment(t *testing.T) {
 	if c.AuthHeader != expectedAuthHeader {
 		t.Errorf("Authenticate() AuthHeader = %v, want %v", c.AuthHeader, expectedAuthHeader)
 	}
+}
+
+func checkAuthEnvADCreds() bool {
+	if _, ok := os.LookupEnv(TestEnvIsADAuth); ok {
+		return true
+	}
+	return false
 }

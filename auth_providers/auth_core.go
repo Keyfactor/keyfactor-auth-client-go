@@ -23,6 +23,45 @@ import (
 	"time"
 )
 
+const (
+	DefaultCommandPort    = "443"
+	DefaultCommandAPIPath = "KeyfactorAPI"
+	DefaultAPIVersion     = "1"
+	DefaultAPIClientName  = "APIClient"
+	DefaultProductVersion = "10.5.0.0"
+	EnvKeyfactorHostName  = "KEYFACTOR_HOSTNAME"
+	EnvKeyfactorPort      = "KEYFACTOR_PORT"
+	EnvKeyfactorAPIPath   = "KEYFACTOR_API_PATH"
+)
+
+// CommandAuthConfig represents the base configuration needed for authentication to Keyfactor Command API.
+type CommandAuthConfig struct {
+	// ConfigType is the type of configuration
+	ConfigType string `json:"config_type"`
+
+	// AuthHeader is the header to be used for authentication to Keyfactor Command API
+	AuthHeader string `json:"auth_header"`
+
+	// CommandHostName is the hostname of the Keyfactor Command API
+	CommandHostName string `json:"command_host_name"`
+
+	// CommandPort is the port of the Keyfactor Command API
+	CommandPort string `json:"command_port"`
+
+	// CommandAPIPath is the path of the Keyfactor Command API, default is "KeyfactorAPI"
+	CommandAPIPath string `json:"command_api_path"`
+
+	// CommandAPIVersion is the version of the Keyfactor Command API, default is "1"
+	CommandVersion string `json:"command_version"`
+
+	// CommandCACert is the CA certificate to be used for authentication to Keyfactor Command API for use with not widely trusted certificates
+	CommandCACert string `json:"command_ca_cert;omitempty"`
+
+	// HttpClient is the http client to be used for authentication to Keyfactor Command API
+	HttpClient *http.Client
+}
+
+// ValidateAuthConfig validates the authentication configuration for Keyfactor Command API.
 func (c *CommandAuthConfig) ValidateAuthConfig() error {
 	if c.CommandHostName == "" {
 		if hostName, ok := os.LookupEnv(EnvKeyfactorHostName); ok {
@@ -45,15 +84,23 @@ func (c *CommandAuthConfig) ValidateAuthConfig() error {
 			c.CommandAPIPath = DefaultCommandAPIPath
 		}
 	}
+
+	c.setClient()
+
 	return nil
 }
 
-func (c *CommandAuthConfig) Authenticate() error {
-	// call /Status/Endpoints API to validate credentials
-
+// setClient sets the http client for authentication to Keyfactor Command API.
+func (c *CommandAuthConfig) setClient() {
 	if c.HttpClient == nil {
 		c.HttpClient = &http.Client{}
 	}
+}
+
+// Authenticate performs the authentication test to Keyfactor Command API and sets Command product version.
+func (c *CommandAuthConfig) Authenticate() error {
+	// call /Status/Endpoints API to validate credentials
+	c.setClient()
 
 	//create headers for request
 	headers := map[string]string{

@@ -16,7 +16,6 @@ package keycloak
 
 import (
 	"os"
-	"time"
 
 	"keyfactor_auth_client/auth_providers"
 )
@@ -24,16 +23,23 @@ import (
 const (
 	EnvKeyfactorAuthHostname = "KEYFACTOR_AUTH_HOST_NAME"
 	EnvKeyfactorAuthPort     = "KEYFACTOR_AUTH_PORT"
-	EnvKeyfactorAccessToken  = "KEYFACTOR_ACCESS_TOKEN"
 )
 
 type CommandAuthConfigKeyCloak struct {
+	// CommandAuthConfig is a reference to the base configuration needed for authentication to Keyfactor Command API
 	auth_providers.CommandAuthConfig
+
+	// AuthHostName is the hostname of the Keycloak server
 	AuthHostName string `json:"auth_host_name"`
-	AuthPort     string `json:"auth_port"`
-	AuthType     string `json:"auth_type"` // The type of Keycloak auth to use such as client_credentials, password, etc.
+
+	// AuthPort is the port of the Keycloak server
+	AuthPort string `json:"auth_port"`
+
+	// AuthType is the type of Keycloak auth to use such as client_credentials, password, etc.
+	AuthType string `json:"auth_type"`
 }
 
+// ValidateAuthConfig validates the authentication configuration for Keycloak.
 func (c *CommandAuthConfigKeyCloak) ValidateAuthConfig() error {
 	pErr := c.CommandAuthConfig.ValidateAuthConfig()
 	if pErr != nil {
@@ -55,15 +61,4 @@ func (c *CommandAuthConfigKeyCloak) ValidateAuthConfig() error {
 		}
 	}
 	return nil
-}
-
-type CommandAuthKeyCloakClientCredentials struct {
-	CommandAuthConfigKeyCloak
-	ClientID     string    `json:"client_id"`
-	ClientSecret string    `json:"client_secret"`
-	AccessToken  string    `json:"access_token"`
-	RefreshToken string    `json:"refresh_token"`
-	Expiry       time.Time `json:"expiry"`
-	Realm        string    `json:"realm"`
-	TokenURL     string    `json:"token_url"`
 }

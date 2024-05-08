@@ -14,33 +14,14 @@
 
 package auth_providers
 
-import (
-	"net/http"
-)
-
-type CommandAuthConfig struct {
-	ConfigType      string `json:"config_type"`
-	AuthHeader      string `json:"auth_header"`
-	CommandHostName string `json:"command_host_name"`
-	CommandPort     string `json:"command_port"`
-	CommandAPIPath  string `json:"command_api_path"`
-	CommandVersion  string `json:"command_version"`
-	HttpClient      *http.Client
-}
-
-const (
-	DefaultCommandPort    = "443"
-	DefaultCommandAPIPath = "KeyfactorAPI"
-	DefaultAPIVersion     = "1"
-	DefaultAPIClientName  = "APIClient"
-	DefaultProductVersion = "10.5.0.0"
-	EnvKeyfactorHostName  = "KEYFACTOR_HOSTNAME"
-	EnvKeyfactorPort      = "KEYFACTOR_PORT"
-	EnvKeyfactorAPIPath   = "KEYFACTOR_API_PATH"
-)
-
+// CommandAuthConfigBasic represents the base configuration needed for authentication to Keyfactor Command API.
 type CommandAuthConfigBasic struct {
+	// CommandAuthConfig is a reference to the base configuration needed for authentication to Keyfactor Command API
 	CommandAuthConfig
+
+	// Username is the username to be used for authentication to Keyfactor Command API
 	Username string `json:"username"`
+
+	// Password is the password to be used for authentication to Keyfactor Command API
 	Password string `json:"password"`
 }

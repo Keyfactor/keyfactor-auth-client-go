@@ -16,46 +16,22 @@ package keycloak
 
 import (
 	"fmt"
-	"net/http"
-	"net/http/httptest"
+	"os"
 	"testing"
 )
 
-func TestCommandAuthKeyCloakClientCredentials_AuthenticateMocked(t *testing.T) {
-	// Create a test server that returns a 200 status and a token
-	ts := httptest.NewServer(
-		http.HandlerFunc(
-			func(w http.ResponseWriter, r *http.Request) {
-				w.WriteHeader(http.StatusOK)
-				w.Write([]byte(`{"access_token": "test_token", "expires_in": 3600}`))
-			},
-		),
-	)
-	defer ts.Close()
-
-	// Create a new CommandAuthKeyCloakClientCredentials instance
-	//c := &CommandAuthKeyCloakClientCredentials{
-	//	ClientID:     "test_client_id",
-	//	ClientSecret: "test_client_secret",
-	//	Realm:        "test_realm",
-	//	TokenURL:     ts.URL, // Use the URL of the test server
-	//}
-
-	//// Call the Authenticate method
-	//err := c.Authenticate()
-	//if err != nil {
-	//	t.Errorf("Authenticate() error = %v", err)
-	//	return
-	//}
-	//
-	//// Check that the AuthHeader was set correctly
-	//expectedAuthHeader := "Bearer test_token"
-	//if c.AuthHeader != expectedAuthHeader {
-	//	t.Errorf("Authenticate() AuthHeader = %v, want %v", c.AuthHeader, expectedAuthHeader)
-	//}
-}
+const (
+	TestEnvIsClientAuth = "TEST_KEYFACTOR_KC_AUTH"
+)
 
 func TestCommandAuthKeyCloakClientCredentials_AuthEnvironment(t *testing.T) {
+
+	if !checkAuthEnvClientCreds() {
+		msg := "Skipping test because Keyfactor Command environment is not authenticated with client credentials"
+		t.Log(msg)
+		t.Skip(msg)
+		return
+	}
 
 	// Create a new CommandAuthKeyCloakClientCredentials instance
 	c := &CommandAuthKeyCloakClientCredentials{} //Used environment configuration
@@ -72,4 +48,11 @@ func TestCommandAuthKeyCloakClientCredentials_AuthEnvironment(t *testing.T) {
 	if c.AuthHeader != expectedAuthHeader {
 		t.Errorf("Authenticate() AuthHeader = %v, want %v", c.AuthHeader, expectedAuthHeader)
 	}
+}
+
+func checkAuthEnvClientCreds() bool {
+	if _, ok := os.LookupEnv(TestEnvIsClientAuth); ok {
+		return true
+	}
+	return false
 }
