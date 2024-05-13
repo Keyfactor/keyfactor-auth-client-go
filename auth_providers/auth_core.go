@@ -125,10 +125,17 @@ func (c *CommandAuthConfig) setClient() {
 func (c *CommandAuthConfig) updateCACerts() error {
 	// check if CommandCACert is set
 	if c.CommandCACert == "" {
-		return nil
+		// check if CommandCACert is set in environment
+		if caCert, ok := os.LookupEnv(EnvKeyfactorCACert); ok {
+			c.CommandCACert = caCert
+		} else {
+			return nil
+		}
 	}
 
+	// ensure client is set
 	c.setClient()
+
 	// Load the system certs
 	rootCAs, pErr := x509.SystemCertPool()
 	if pErr != nil {

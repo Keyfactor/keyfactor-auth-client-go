@@ -27,6 +27,7 @@ import (
 const (
 	EnvKeyfactorAuthHostname = "KEYFACTOR_AUTH_HOSTNAME"
 	EnvKeyfactorAuthPort     = "KEYFACTOR_AUTH_PORT"
+	EnvAuthCACert            = "KEYFACTOR_AUTH_CA_CERT"
 )
 
 type CommandAuthConfigKeyCloak struct {
@@ -78,7 +79,12 @@ func (c *CommandAuthConfigKeyCloak) ValidateAuthConfig() error {
 func (c *CommandAuthConfigKeyCloak) updateCACerts() error {
 	// check if CommandCACert is set
 	if c.AuthCACert == "" {
-		return nil
+		// check environment for auth CA cert
+		if authCACert, ok := os.LookupEnv(EnvAuthCACert); ok {
+			c.AuthCACert = authCACert
+		} else {
+			return nil
+		}
 	}
 
 	// Load the system certs
