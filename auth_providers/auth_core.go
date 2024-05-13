@@ -35,6 +35,7 @@ const (
 	EnvKeyfactorPort       = "KEYFACTOR_PORT"
 	EnvKeyfactorAPIPath    = "KEYFACTOR_API_PATH"
 	EnvKeyfactorSkipVerify = "KEYFACTOR_SKIP_VERIFY"
+	EnvKeyfactorCACert     = "KEYFACTOR_CA_CERT"
 )
 
 // CommandAuthConfig represents the base configuration needed for authentication to Keyfactor Command API.

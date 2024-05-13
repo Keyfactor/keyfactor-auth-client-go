@@ -17,11 +17,13 @@ Client library for authenticating to Keyfactor Command
 
 ### Global
 
-| Name               | Description                                          | Default       |
-|--------------------|------------------------------------------------------|---------------|
-| KEYFACTOR_HOSTNAME | Keyfactor Command hostname without protocol and port |               |
-| KEYFACTOR_PORT     | Keyfactor Command port                               | `443`         |
-| KEYFACTOR_API_PATH | Keyfactor Command API Path                           | /KeyfactorAPI |
+| Name                  | Description                                                  | Default        |
+|-----------------------|--------------------------------------------------------------|----------------|
+| KEYFACTOR_HOSTNAME    | Keyfactor Command hostname without protocol and port         |                |
+| KEYFACTOR_PORT        | Keyfactor Command port                                       | `443`          |
+| KEYFACTOR_API_PATH    | Keyfactor Command API Path                                   | `KeyfactorAPI` |
+| KEYFACTOR_SKIP_VERIFY | Skip TLS verification when connecting to Keyfactor Command   | `false`        |
+| KEYFACTOR_CA_CERT     | Either a file path or PEM encoded string to a CA certificate |                |
 
 ### Active Directory
 
@@ -39,6 +41,7 @@ Client library for authenticating to Keyfactor Command
 | KEYFACTOR_AUTH_REALM    | Keyfactor Auth Realm                                                                                                            | `Keyfactor` |
 | KEYFACTOR_AUTH_SCOPES   | Scopes to request when authenticating to Keyfactor Command API                                                                  | `openid`    |
 | KEYFACTOR_ACCESS_TOKEN  | Access token to use to authenticate to Keyfactor Command API. This can be supplied directly or generated via client credentials |             |
+| KEYFACTOR_AUTH_CA_CERT  | Either a file path or PEM encoded string to a CA certificate to use when connecting to Keyfactor Auth                           |             |
 
 #### Client Credentials
 
