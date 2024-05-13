@@ -93,6 +93,11 @@ func (c *CommandAuthConfig) ValidateAuthConfig() error {
 
 	c.setClient()
 
+	// check for skip verify in environment
+	if skipVerify, ok := os.LookupEnv(EnvKeyfactorSkipVerify); ok {
+		c.SkipVerify = skipVerify == "true" || skipVerify == "1"
+	}
+
 	if c.SkipVerify {
 		c.HttpClient.Transport = &http.Transport{
 			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
