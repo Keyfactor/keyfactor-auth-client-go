@@ -8,16 +8,6 @@ module "keyfactor_github_test_environment_ad_10_5_0" {
   keyfactor_password  = var.keyfactor_password_10_5_0
 }
 
-# module "keyfactor_github_test_environment_11_5_0_ad" {
-#   source = "git::ssh://git@github.com/Keyfactor/terraform-module-keyfactor-github-test-environment-ad.git?ref=v1.0.0"
-#
-#   gh_environment_name = "KFC_11_5_0_AD"
-#   gh_repo_name        = data.github_repository.repo.name
-#   keyfactor_hostname  = var.keyfactor_hostname_11_5_0_AD
-#   keyfactor_username  = var.keyfactor_username_11_5_0_AD
-#   keyfactor_password  = var.keyfactor_password_11_5_0_AD
-# }
-
 module "keyfactor_github_test_environment_11_5_0_kc" {
   source = "git::ssh://git@github.com/Keyfactor/terraform-module-keyfactor-github-test-environment-kc.git?ref=main"
 

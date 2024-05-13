@@ -15,6 +15,8 @@
 package auth_providers
 
 import (
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -24,14 +26,15 @@ import (
 )
 
 const (
-	DefaultCommandPort    = "443"
-	DefaultCommandAPIPath = "KeyfactorAPI"
-	DefaultAPIVersion     = "1"
-	DefaultAPIClientName  = "APIClient"
-	DefaultProductVersion = "10.5.0.0"
-	EnvKeyfactorHostName  = "KEYFACTOR_HOSTNAME"
-	EnvKeyfactorPort      = "KEYFACTOR_PORT"
-	EnvKeyfactorAPIPath   = "KEYFACTOR_API_PATH"
+	DefaultCommandPort     = "443"
+	DefaultCommandAPIPath  = "KeyfactorAPI"
+	DefaultAPIVersion      = "1"
+	DefaultAPIClientName   = "APIClient"
+	DefaultProductVersion  = "10.5.0.0"
+	EnvKeyfactorHostName   = "KEYFACTOR_HOSTNAME"
+	EnvKeyfactorPort       = "KEYFACTOR_PORT"
+	EnvKeyfactorAPIPath    = "KEYFACTOR_API_PATH"
+	EnvKeyfactorSkipVerify = "KEYFACTOR_SKIP_VERIFY"
 )
 
 // CommandAuthConfig represents the base configuration needed for authentication to Keyfactor Command API.
@@ -54,8 +57,11 @@ type CommandAuthConfig struct {
 	// CommandAPIVersion is the version of the Keyfactor Command API, default is "1"
 	CommandVersion string `json:"command_version"`
 
-	// CommandCACert is the CA certificate to be used for authentication to Keyfactor Command API for use with not widely trusted certificates
-	CommandCACert string `json:"command_ca_cert;omitempty"`
+	// CommandCACert is the CA certificate to be used for authentication to Keyfactor Command API for use with not widely trusted certificates. This can be a filepath or a string of the certificate in PEM format.
+	CommandCACert string `json:"command_ca_cert"`
+
+	// SkipVerify is a flag to skip verification of the server's certificate chain and host name. Default is false.
+	SkipVerify bool `json:"skip_verify"`
 
 	// HttpClient is the http client to be used for authentication to Keyfactor Command API
 	HttpClient *http.Client
@@ -87,6 +93,18 @@ func (c *CommandAuthConfig) ValidateAuthConfig() error {
 
 	c.setClient()
 
+	if c.SkipVerify {
+		c.HttpClient.Transport = &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		}
+		return nil
+	}
+
+	caErr := c.updateCACerts()
+	if caErr != nil {
+		return caErr
+	}
+
 	return nil
 }
 
@@ -95,6 +113,50 @@ func (c *CommandAuthConfig) setClient() {
 	if c.HttpClient == nil {
 		c.HttpClient = &http.Client{}
 	}
+}
+
+// updateCACerts updates the CA certs for the http client.
+func (c *CommandAuthConfig) updateCACerts() error {
+	// check if CommandCACert is set
+	if c.CommandCACert == "" {
+		return nil
+	}
+
+	c.setClient()
+	// Load the system certs
+	rootCAs, pErr := x509.SystemCertPool()
+	if pErr != nil {
+		return pErr
+	}
+	if rootCAs == nil {
+		rootCAs = x509.NewCertPool()
+	}
+
+	// check if CommandCACert is a file
+	if _, err := os.Stat(c.CommandCACert); err == nil {
+		cert, ioErr := os.ReadFile(c.CommandCACert)
+		if ioErr != nil {
+			return ioErr
+		}
+		// Append your custom cert to the pool
+		if ok := rootCAs.AppendCertsFromPEM(cert); !ok {
+			return fmt.Errorf("failed to append custom CA cert to pool")
+		}
+	} else {
+		// Append your custom cert to the pool
+		if ok := rootCAs.AppendCertsFromPEM([]byte(c.CommandCACert)); !ok {
+			return fmt.Errorf("failed to append custom CA cert to pool")
+		}
+	}
+
+	// Trust the augmented cert pool in our client
+	c.HttpClient.Transport = &http.Transport{
+		TLSClientConfig: &tls.Config{
+			RootCAs: rootCAs,
+		},
+	}
+
+	return nil
 }
 
 // Authenticate performs the authentication test to Keyfactor Command API and sets Command product version.
