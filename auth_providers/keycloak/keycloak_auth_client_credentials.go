@@ -23,16 +23,18 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"keyfactor_auth_client/auth_providers"
 )
 
 const (
-	DefaultKeyfactorAuthPort = "8444"
-	DefaultKeyfactorRealm    = "Keyfactor"
-	EnvKeyfactorClientID     = "KEYFACTOR_AUTH_CLIENT_ID"
-	EnvKeyfactorClientSecret = "KEYFACTOR_AUTH_CLIENT_SECRET"
-	EnvKeyfactorAuthRealm    = "KEYFACTOR_AUTH_REALM"
-	EnvKeyfactorAuthTokenURL = "KEYFACTOR_AUTH_TOKEN_URL"
-	EnvKeyfactorAccessToken  = "KEYFACTOR_ACCESS_TOKEN"
+	DefaultKeyfactorAuthPort  = "8444"
+	DefaultKeyfactorAuthRealm = "Keyfactor"
+	EnvKeyfactorClientID      = "KEYFACTOR_AUTH_CLIENT_ID"
+	EnvKeyfactorClientSecret  = "KEYFACTOR_AUTH_CLIENT_SECRET"
+	EnvKeyfactorAuthRealm     = "KEYFACTOR_AUTH_REALM"
+	EnvKeyfactorAuthTokenURL  = "KEYFACTOR_AUTH_TOKEN_URL"
+	EnvKeyfactorAccessToken   = "KEYFACTOR_ACCESS_TOKEN"
 )
 
 // CommandAuthKeyCloakClientCredentials represents the configuration needed for Keycloak authentication using client credentials.
@@ -87,6 +89,25 @@ func (c *CommandAuthKeyCloakClientCredentials) Authenticate() error {
 
 	c.AuthHeader = fmt.Sprintf("Bearer %s", token)
 
+	// create oauth client
+	oauthy, err := auth_providers.NewOAuthAuthenticatorBuilder().
+		WithClientId(c.ClientID).
+		WithClientSecret(c.ClientSecret).
+		WithTokenUrl(c.TokenURL).
+		Build()
+
+	if err != nil {
+		return err
+	}
+
+	if oauthy != nil {
+		oClient, oerr := oauthy.GetHttpClient()
+		if oerr != nil {
+			return oerr
+		}
+		c.SetClient(oClient)
+	}
+
 	aErr := c.CommandAuthConfig.Authenticate()
 	if aErr != nil {
 		return aErr
@@ -128,7 +149,7 @@ func (c *CommandAuthKeyCloakClientCredentials) setRealm() error {
 		if realm, ok := os.LookupEnv(EnvKeyfactorAuthRealm); ok {
 			c.Realm = realm
 		} else {
-			c.Realm = DefaultKeyfactorRealm
+			c.Realm = DefaultKeyfactorAuthRealm
 		}
 	}
 	return nil

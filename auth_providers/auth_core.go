@@ -91,8 +91,7 @@ func (c *CommandAuthConfig) ValidateAuthConfig() error {
 			c.CommandAPIPath = DefaultCommandAPIPath
 		}
 	}
-
-	c.setClient()
+	c.SetClient(nil)
 
 	// check for skip verify in environment
 	if skipVerify, ok := os.LookupEnv(EnvKeyfactorSkipVerify); ok {
@@ -114,11 +113,15 @@ func (c *CommandAuthConfig) ValidateAuthConfig() error {
 	return nil
 }
 
-// setClient sets the http client for authentication to Keyfactor Command API.
-func (c *CommandAuthConfig) setClient() {
+// SetClient sets the http client for authentication to Keyfactor Command API.
+func (c *CommandAuthConfig) SetClient(client *http.Client) *http.Client {
+	if client != nil {
+		c.HttpClient = client
+	}
 	if c.HttpClient == nil {
 		c.HttpClient = &http.Client{}
 	}
+	return c.HttpClient
 }
 
 // updateCACerts updates the CA certs for the http client.
@@ -134,7 +137,7 @@ func (c *CommandAuthConfig) updateCACerts() error {
 	}
 
 	// ensure client is set
-	c.setClient()
+	c.SetClient(nil)
 
 	// Load the system certs
 	rootCAs, pErr := x509.SystemCertPool()
@@ -175,7 +178,7 @@ func (c *CommandAuthConfig) updateCACerts() error {
 // Authenticate performs the authentication test to Keyfactor Command API and sets Command product version.
 func (c *CommandAuthConfig) Authenticate() error {
 	// call /Status/Endpoints API to validate credentials
-	c.setClient()
+	c.SetClient(nil)
 
 	//create headers for request
 	headers := map[string]string{

@@ -15,3 +15,5 @@
 module keyfactor_auth_client
 
 go 1.22
+
+require golang.org/x/oauth2 v0.22.0
