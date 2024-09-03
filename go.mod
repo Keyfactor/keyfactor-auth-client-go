@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-module keyfactor_auth_client
+module keyfactor-auth-client-go
 
 go 1.22
 
