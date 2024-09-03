@@ -30,6 +30,13 @@ const (
 
 	// EnvKeyfactorAccessToken is the environment variable used to set the access token for oauth client credentials authentication
 	EnvKeyfactorAccessToken = "KEYFACTOR_ACCESS_TOKEN"
+
+	// EnvKeyfactorAuthAudience is the environment variable used to set the audience for oauth client credentials
+	//authentication
+	EnvKeyfactorAuthAudience = "KEYFACTOR_AUTH_AUDIENCE"
+
+	// EnvKeyfactorAuthScopes is the environment variable used to set the scopes for oauth client credentials authentication
+	EnvKeyfactorAuthScopes = "KEYFACTOR_AUTH_SCOPES"
 )
 
 // OAuth Authenticator
