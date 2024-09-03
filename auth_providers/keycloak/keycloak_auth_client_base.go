@@ -65,7 +65,7 @@ func (c *CommandAuthConfigKeyCloak) ValidateAuthConfig() error {
 		if port, ok := os.LookupEnv(EnvKeyfactorAuthPort); ok {
 			c.AuthPort = port
 		} else {
-			c.AuthPort = DefaultKeyfactorAuthPort
+			c.AuthPort = auth_providers.DefaultKeyfactorAuthPort
 		}
 	}
 

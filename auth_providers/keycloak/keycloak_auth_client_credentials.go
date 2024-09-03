@@ -28,13 +28,8 @@ import (
 )
 
 const (
-	DefaultKeyfactorAuthPort  = "8444"
 	DefaultKeyfactorAuthRealm = "Keyfactor"
-	EnvKeyfactorClientID      = "KEYFACTOR_AUTH_CLIENT_ID"
-	EnvKeyfactorClientSecret  = "KEYFACTOR_AUTH_CLIENT_SECRET"
 	EnvKeyfactorAuthRealm     = "KEYFACTOR_AUTH_REALM"
-	EnvKeyfactorAuthTokenURL  = "KEYFACTOR_AUTH_TOKEN_URL"
-	EnvKeyfactorAccessToken   = "KEYFACTOR_ACCESS_TOKEN"
 )
 
 // CommandAuthKeyCloakClientCredentials represents the configuration needed for Keycloak authentication using client credentials.
@@ -68,26 +63,21 @@ type CommandAuthKeyCloakClientCredentials struct {
 // Authenticate performs the authentication process for Keycloak using client credentials.
 // It validates the authentication configuration, gets the token, and calls the base authentication method.
 func (c *CommandAuthKeyCloakClientCredentials) Authenticate() error {
-	cErr := c.CommandAuthConfig.ValidateAuthConfig() // Validate base config
-	if cErr != nil {
-		return cErr
-	}
-
 	c.AuthType = "client_credentials"
-	cErr = c.ValidateAuthConfig()
+	cErr := c.ValidateAuthConfig()
 	if cErr != nil {
 		return cErr
 	}
 
-	token, tErr := c.GetToken()
-	if tErr != nil {
-		return tErr
-	}
-	if token == "" {
-		return fmt.Errorf("failed to get Bearer token using client credentials")
-	}
-
-	c.AuthHeader = fmt.Sprintf("Bearer %s", token)
+	//token, tErr := c.GetToken()
+	//if tErr != nil {
+	//	return tErr
+	//}
+	//if token == "" {
+	//	return fmt.Errorf("failed to get Bearer token using client credentials")
+	//}
+	//
+	//c.AuthHeader = fmt.Sprintf("Bearer %s", token)
 
 	// create oauth client
 	oauthy, err := auth_providers.NewOAuthAuthenticatorBuilder().
@@ -120,10 +110,10 @@ func (c *CommandAuthKeyCloakClientCredentials) Authenticate() error {
 // It retrieves the client ID from environment variables if it's not set.
 func (c *CommandAuthKeyCloakClientCredentials) setClientId() error {
 	if c.ClientID == "" {
-		if clientID, ok := os.LookupEnv(EnvKeyfactorClientID); ok {
+		if clientID, ok := os.LookupEnv(auth_providers.EnvKeyfactorClientID); ok {
 			c.ClientID = clientID
 		} else {
-			return fmt.Errorf("client_id or environment variable %s is required", EnvKeyfactorClientID)
+			return fmt.Errorf("client_id or environment variable %s is required", auth_providers.EnvKeyfactorClientID)
 		}
 	}
 	return nil
@@ -133,10 +123,13 @@ func (c *CommandAuthKeyCloakClientCredentials) setClientId() error {
 // It retrieves the client secret from environment variables if it's not set.
 func (c *CommandAuthKeyCloakClientCredentials) setClientSecret() error {
 	if c.ClientSecret == "" {
-		if clientSecret, ok := os.LookupEnv(EnvKeyfactorClientSecret); ok {
+		if clientSecret, ok := os.LookupEnv(auth_providers.EnvKeyfactorClientSecret); ok {
 			c.ClientSecret = clientSecret
 		} else {
-			return fmt.Errorf("client_secret or environment variable %s is required", EnvKeyfactorClientSecret)
+			return fmt.Errorf(
+				"client_secret or environment variable %s is required",
+				auth_providers.EnvKeyfactorClientSecret,
+			)
 		}
 	}
 	return nil
@@ -159,7 +152,7 @@ func (c *CommandAuthKeyCloakClientCredentials) setRealm() error {
 // It generates the token URL if it's not set.
 func (c *CommandAuthKeyCloakClientCredentials) setTokenURL() error {
 	if c.TokenURL == "" {
-		if tokenURL, ok := os.LookupEnv(EnvKeyfactorAuthTokenURL); ok {
+		if tokenURL, ok := os.LookupEnv(auth_providers.EnvKeyfactorAuthTokenURL); ok {
 			c.TokenURL = tokenURL
 		} else {
 			c.TokenURL = fmt.Sprintf(
@@ -202,7 +195,7 @@ func (c *CommandAuthKeyCloakClientCredentials) ValidateAuthConfig() error {
 
 	}
 
-	return nil
+	return c.CommandAuthConfig.ValidateAuthConfig()
 }
 
 // GetToken gets the access token for Keycloak authentication.
@@ -210,7 +203,7 @@ func (c *CommandAuthKeyCloakClientCredentials) ValidateAuthConfig() error {
 func (c *CommandAuthKeyCloakClientCredentials) GetToken() (string, error) {
 	// Check if access token is set in environment variable
 	if c.AccessToken == "" {
-		if accessToken, ok := os.LookupEnv(EnvKeyfactorAccessToken); ok {
+		if accessToken, ok := os.LookupEnv(auth_providers.EnvKeyfactorAccessToken); ok {
 			c.AccessToken = accessToken
 
 			// Don't try to refresh as we don't have a refresh token

@@ -18,10 +18,12 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
+	"encoding/pem"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 )
 
@@ -38,6 +40,11 @@ const (
 	EnvKeyfactorCACert       = "KEYFACTOR_CA_CERT"
 	EnvKeyfactorAuthProvider = "KEYFACTOR_AUTH_PROVIDER"
 )
+
+// Authenticator is an interface for authentication to Keyfactor Command API.
+type Authenticator interface {
+	GetHttpClient() (*http.Client, error)
+}
 
 // CommandAuthConfig represents the base configuration needed for authentication to Keyfactor Command API.
 type CommandAuthConfig struct {
@@ -67,6 +74,36 @@ type CommandAuthConfig struct {
 
 	// HttpClient is the http client to be used for authentication to Keyfactor Command API
 	HttpClient *http.Client
+}
+
+func (c *CommandAuthConfig) WithCommandHostName(hostName string) *CommandAuthConfig {
+	c.CommandHostName = hostName
+	return c
+}
+
+func (c *CommandAuthConfig) WithCommandPort(port string) *CommandAuthConfig {
+	c.CommandPort = port
+	return c
+}
+
+func (c *CommandAuthConfig) WithCommandAPIPath(apiPath string) *CommandAuthConfig {
+	c.CommandAPIPath = apiPath
+	return c
+}
+
+func (c *CommandAuthConfig) WithCommandCACert(caCert string) *CommandAuthConfig {
+	c.CommandCACert = caCert
+	return c
+}
+
+func (c *CommandAuthConfig) WithSkipVerify(skipVerify bool) *CommandAuthConfig {
+	c.SkipVerify = skipVerify
+	return c
+}
+
+func (c *CommandAuthConfig) WithHttpClient(client *http.Client) *CommandAuthConfig {
+	c.HttpClient = client
+	return c
 }
 
 // ValidateAuthConfig validates the authentication configuration for Keyfactor Command API.
@@ -185,9 +222,12 @@ func (c *CommandAuthConfig) Authenticate() error {
 	headers := map[string]string{
 		"Content-Type":               "application/json",
 		"Accept":                     "application/json",
-		"Authorization":              c.AuthHeader,
 		"x-keyfactor-api-version":    DefaultAPIVersion,
 		"x-keyfactor-requested-with": DefaultAPIClientName,
+	}
+
+	if c.AuthHeader != "" {
+		headers["Authorization"] = c.AuthHeader
 	}
 
 	endPoint := fmt.Sprintf(
@@ -252,4 +292,53 @@ func (c *CommandAuthConfig) Authenticate() error {
 
 	return nil
 
+}
+
+func FindCACertificate(caCertificatePath string) ([]*x509.Certificate, error) {
+	if caCertificatePath == "" {
+		return nil, nil
+	}
+
+	buf, err := os.ReadFile(caCertificatePath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read CA certificate file at path %s: %w", caCertificatePath, err)
+	}
+	// Decode the PEM encoded certificates into a slice of PEM blocks
+	chainBlocks, _, err := DecodePEMBytes(buf)
+	if err != nil {
+		return nil, err
+	}
+	if len(chainBlocks) <= 0 {
+		return nil, fmt.Errorf("didn't find certificate in file at path %s", caCertificatePath)
+	}
+
+	var caChain []*x509.Certificate
+	for _, block := range chainBlocks {
+		// Parse the PEM block into an x509 certificate
+		cert, err := x509.ParseCertificate(block.Bytes)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse CA certificate: %w", err)
+		}
+
+		caChain = append(caChain, cert)
+	}
+
+	return caChain, nil
+}
+
+func DecodePEMBytes(buf []byte) ([]*pem.Block, []byte, error) {
+	var privKey []byte
+	var certificates []*pem.Block
+	var block *pem.Block
+	for {
+		block, buf = pem.Decode(buf)
+		if block == nil {
+			break
+		} else if strings.Contains(block.Type, "PRIVATE KEY") {
+			privKey = pem.EncodeToMemory(block)
+		} else {
+			certificates = append(certificates, block)
+		}
+	}
+	return certificates, privKey, nil
 }
