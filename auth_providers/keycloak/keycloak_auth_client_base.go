@@ -24,12 +24,6 @@ import (
 	"github.com/Keyfactor/keyfactor-auth-client-go/auth_providers"
 )
 
-const (
-	EnvKeyfactorAuthHostname = "KEYFACTOR_AUTH_HOSTNAME"
-	EnvKeyfactorAuthPort     = "KEYFACTOR_AUTH_PORT"
-	EnvAuthCACert            = "KEYFACTOR_AUTH_CA_CERT"
-)
-
 type CommandAuthConfigKeyCloak struct {
 	// CommandAuthConfig is a reference to the base configuration needed for authentication to Keyfactor Command API
 	auth_providers.CommandAuthConfig

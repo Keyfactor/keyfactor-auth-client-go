@@ -37,6 +37,15 @@ const (
 
 	// EnvKeyfactorAuthScopes is the environment variable used to set the scopes for oauth client credentials authentication
 	EnvKeyfactorAuthScopes = "KEYFACTOR_AUTH_SCOPES"
+
+	// EnvKeyfactorAuthHostname is the environment variable used to set the hostname for oauth client credentials authentication
+	EnvKeyfactorAuthHostname = "KEYFACTOR_AUTH_HOSTNAME"
+
+	// EnvKeyfactorAuthPort is the environment variable used to set the port for oauth client credentials authentication
+	EnvKeyfactorAuthPort = "KEYFACTOR_AUTH_PORT"
+
+	// EnvAuthCACert is a path to a CA certificate for the OAuth client credentials authentication
+	EnvAuthCACert = "KEYFACTOR_AUTH_CA_CERT"
 )
 
 // OAuth Authenticator
