@@ -20,7 +20,7 @@ import (
 	"os"
 	"strings"
 
-	"keyfactor_auth_client/auth_providers"
+	"github.com/Keyfactor/keyfactor-auth-client-go/auth_providers"
 )
 
 const (

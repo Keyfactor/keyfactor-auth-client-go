@@ -17,7 +17,7 @@ package main
 import (
 	"fmt"
 
-	"keyfactor_auth_client/pkg"
+	"github.com/Keyfactor/keyfactor-auth-client-go/pkg" // Correct
 )
 
 func main() {
