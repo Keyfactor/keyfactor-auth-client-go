@@ -26,16 +26,17 @@ import (
 )
 
 const (
-	DefaultCommandPort     = "443"
-	DefaultCommandAPIPath  = "KeyfactorAPI"
-	DefaultAPIVersion      = "1"
-	DefaultAPIClientName   = "APIClient"
-	DefaultProductVersion  = "10.5.0.0"
-	EnvKeyfactorHostName   = "KEYFACTOR_HOSTNAME"
-	EnvKeyfactorPort       = "KEYFACTOR_PORT"
-	EnvKeyfactorAPIPath    = "KEYFACTOR_API_PATH"
-	EnvKeyfactorSkipVerify = "KEYFACTOR_SKIP_VERIFY"
-	EnvKeyfactorCACert     = "KEYFACTOR_CA_CERT"
+	DefaultCommandPort       = "443"
+	DefaultCommandAPIPath    = "KeyfactorAPI"
+	DefaultAPIVersion        = "1"
+	DefaultAPIClientName     = "APIClient"
+	DefaultProductVersion    = "10.5.0.0"
+	EnvKeyfactorHostName     = "KEYFACTOR_HOSTNAME"
+	EnvKeyfactorPort         = "KEYFACTOR_PORT"
+	EnvKeyfactorAPIPath      = "KEYFACTOR_API_PATH"
+	EnvKeyfactorSkipVerify   = "KEYFACTOR_SKIP_VERIFY"
+	EnvKeyfactorCACert       = "KEYFACTOR_CA_CERT"
+	EnvKeyfactorAuthProvider = "KEYFACTOR_AUTH_PROVIDER"
 )
 
 // CommandAuthConfig represents the base configuration needed for authentication to Keyfactor Command API.
