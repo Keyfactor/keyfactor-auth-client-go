@@ -16,4 +16,7 @@ module github.com/Keyfactor/keyfactor-auth-client-go
 
 go 1.22
 
-require golang.org/x/oauth2 v0.22.0
+require (
+	golang.org/x/oauth2 v0.22.0
+	gopkg.in/yaml.v2 v2.4.0
+)

@@ -18,23 +18,72 @@ import (
 	"encoding/base64"
 	"fmt"
 	"net/http"
+	"os"
 )
 
+const (
+	EnvKeyfactorUsername = "KEYFACTOR_USERNAME"
+	EnvKeyfactorPassword = "KEYFACTOR_PASSWORD"
+)
+
+// Basic Authenticator
 var _ Authenticator = &BasicAuthAuthenticator{}
 
+// BasicAuthAuthenticator is an Authenticator that uses Basic Auth for authentication.
 type BasicAuthAuthenticator struct {
-	client *http.Client
+	Client *http.Client
 }
 
-func BasicAuthTransport(username, password string) *http.Client {
+// GetHttpClient returns the http client
+func (b *BasicAuthAuthenticator) GetHttpClient() (*http.Client, error) {
+	return b.Client, nil
+}
+
+// CommandAuthConfigBasic represents the base configuration needed for authentication to Keyfactor Command API.
+type CommandAuthConfigBasic struct {
+	// CommandAuthConfig is a reference to the base configuration needed for authentication to Keyfactor Command API
+	CommandAuthConfig
+
+	// Username is the username to be used for authentication to Keyfactor Command API
+	Username string `json:"username,omitempty"`
+
+	// Password is the password to be used for authentication to Keyfactor Command API
+	Password string `json:"password,omitempty"`
+}
+
+// NewBasicAuthAuthenticatorBuilder creates a new instance of CommandAuthConfigBasic
+func NewBasicAuthAuthenticatorBuilder() *CommandAuthConfigBasic {
+	return &CommandAuthConfigBasic{}
+}
+
+// WithUsername sets the username for authentication
+func (a *CommandAuthConfigBasic) WithUsername(username string) *CommandAuthConfigBasic {
+	a.Username = username
+	return a
+}
+
+// WithPassword sets the password for authentication
+func (a *CommandAuthConfigBasic) WithPassword(password string) *CommandAuthConfigBasic {
+	a.Password = password
+	return a
+}
+
+// GetHttpClient returns the http client
+func (a *CommandAuthConfigBasic) GetHttpClient() (*http.Client, error) {
+	//validate the configuration
+	cErr := a.ValidateAuthConfig()
+	if cErr != nil {
+		return nil, cErr
+	}
+
 	// Encode the username and password in Base64
-	auth := username + ":" + password
+	auth := a.Username + ":" + a.Password
 	encodedAuth := base64.StdEncoding.EncodeToString([]byte(auth))
 
 	// Create a custom RoundTripper
-	transport := &http.Transport{
-		Proxy: http.ProxyFromEnvironment,
-		// You can customize other transport settings here
+	transport, tErr := a.CommandAuthConfig.BuildTransport()
+	if tErr != nil {
+		return nil, tErr
 	}
 
 	return &http.Client{
@@ -47,75 +96,61 @@ func BasicAuthTransport(username, password string) *http.Client {
 				return transport.RoundTrip(req)
 			},
 		),
-	}
+	}, nil
 }
 
-// roundTripperFunc is a helper type to create a custom RoundTripper
-type roundTripperFunc func(req *http.Request) (*http.Response, error)
-
-func (f roundTripperFunc) RoundTrip(req *http.Request) (*http.Response, error) {
-	return f(req)
-}
-
-func (b *BasicAuthAuthenticator) GetHttpClient() (*http.Client, error) {
-	return b.client, nil
-}
-
-// CommandAuthConfigBasic represents the base configuration needed for authentication to Keyfactor Command API.
-type CommandAuthConfigBasic struct {
-	// CommandAuthConfig is a reference to the base configuration needed for authentication to Keyfactor Command API
-	CommandAuthConfig
-
-	// Username is the username to be used for authentication to Keyfactor Command API
-	Username string `json:"username"`
-
-	// Password is the password to be used for authentication to Keyfactor Command API
-	Password string `json:"password"`
-}
-
-func NewBasicAuthAuthenticatorBuilder() *CommandAuthConfigBasic {
-	return &CommandAuthConfigBasic{}
-}
-
-func (a *CommandAuthConfigBasic) WithUsername(username string) *CommandAuthConfigBasic {
-	a.Username = username
-	return a
-}
-
-func (a *CommandAuthConfigBasic) WithPassword(password string) *CommandAuthConfigBasic {
-	a.Password = password
-	return a
-}
-
+// Build creates a new instance of BasicAuthAuthenticator
 func (a *CommandAuthConfigBasic) Build() (Authenticator, error) {
 
-	client := BasicAuthTransport(a.Username, a.Password)
+	client, cErr := a.GetHttpClient()
+	if cErr != nil {
+		return nil, cErr
+	}
 	a.HttpClient = client
 
-	return &BasicAuthAuthenticator{client: client}, nil
+	return &BasicAuthAuthenticator{Client: client}, nil
 }
 
+// ValidateAuthConfig validates the configuration
 func (a *CommandAuthConfigBasic) ValidateAuthConfig() error {
+	serverConfig, _ := a.CommandAuthConfig.LoadConfig(
+		a.CommandAuthConfig.ConfigProfile,
+		a.CommandAuthConfig.ConfigFilePath,
+	)
 	if a.Username == "" {
-		return fmt.Errorf("username is required")
+		if username, ok := os.LookupEnv(EnvKeyfactorUsername); ok {
+			a.Username = username
+		} else {
+			if serverConfig != nil && serverConfig.Username != "" {
+				a.Username = serverConfig.Username
+			} else {
+				return fmt.Errorf("username or environment variable %s is required", EnvKeyfactorUsername)
+			}
+		}
 	}
 	if a.Password == "" {
-		return fmt.Errorf("password is required")
+		if password, ok := os.LookupEnv(EnvKeyfactorPassword); ok {
+			a.Password = password
+		} else {
+			if serverConfig != nil && serverConfig.Password != "" {
+				a.Password = serverConfig.Password
+			} else {
+				return fmt.Errorf("password or environment variable %s is required", EnvKeyfactorPassword)
+			}
+		}
 	}
 
 	return a.CommandAuthConfig.ValidateAuthConfig()
 }
 
+// Authenticate authenticates the user
 func (a *CommandAuthConfigBasic) Authenticate() error {
 	cErr := a.ValidateAuthConfig()
 	if cErr != nil {
 		return cErr
 	}
-	//basicAuth := fmt.Sprintf("%s:%s", c.Username, c.Password)
-	//basicAuth = base64.StdEncoding.EncodeToString([]byte(basicAuth))
-	//c.AuthHeader = fmt.Sprintf("Basic %s", basicAuth)
 
-	// create oauth client
+	// create oauth Client
 	authy, err := NewBasicAuthAuthenticatorBuilder().
 		WithUsername(a.Username).
 		WithPassword(a.Password).

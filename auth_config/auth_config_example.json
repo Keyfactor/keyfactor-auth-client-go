@@ -1,0 +1,42 @@
+{
+  "servers": {
+    "default_profile": {
+      "host": "keyfactor.command.kfdelivery.com",
+      "auth_hostname": "idp.keyfactor.command.kfdelivery.com",
+      "auth_port": 8444,
+      "username": "keyfactor",
+      "password": "password",
+      "client_id": "client-id",
+      "client_secret": "client-secret",
+      "domain": "command",
+      "api_path": "KeyfactorAPI",
+      "auth_provider": {
+        "type": "azid",
+        "profile": "azure",
+        "parameters": {
+          "secret_name": "command-config-azure",
+          "vault_name": "keyfactor-secrets"
+        }
+      }
+    },
+    "alternative_profile": {
+      "host": "keyfactor2.command.kfdelivery.com",
+      "auth_hostname": "idp.keyfactor2.command.kfdelivery.com",
+      "auth_port": 8444,
+      "username": "keyfactor2",
+      "password": "password2",
+      "client_id": "client-id2",
+      "client_secret": "client-secret2",
+      "domain": "command",
+      "api_path": "KeyfactorAPI",
+      "auth_provider": {
+        "type": "azid",
+        "profile": "azure",
+        "parameters": {
+          "secret_name": "command-config-azure2",
+          "vault_name": "keyfactor-secrets"
+        }
+      }
+    }
+  }
+}

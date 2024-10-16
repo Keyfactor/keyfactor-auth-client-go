@@ -23,22 +23,30 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
+
+	authconfig "github.com/Keyfactor/keyfactor-auth-client-go/auth_config"
 )
 
 const (
-	DefaultCommandPort       = "443"
-	DefaultCommandAPIPath    = "KeyfactorAPI"
-	DefaultAPIVersion        = "1"
-	DefaultAPIClientName     = "APIClient"
-	DefaultProductVersion    = "10.5.0.0"
-	EnvKeyfactorHostName     = "KEYFACTOR_HOSTNAME"
-	EnvKeyfactorPort         = "KEYFACTOR_PORT"
-	EnvKeyfactorAPIPath      = "KEYFACTOR_API_PATH"
-	EnvKeyfactorSkipVerify   = "KEYFACTOR_SKIP_VERIFY"
-	EnvKeyfactorCACert       = "KEYFACTOR_CA_CERT"
-	EnvKeyfactorAuthProvider = "KEYFACTOR_AUTH_PROVIDER"
+	DefaultCommandPort    = 443
+	DefaultCommandAPIPath = "KeyfactorAPI"
+	DefaultAPIVersion     = "1"
+	DefaultAPIClientName  = "APIClient"
+	DefaultProductVersion = "10.5.0.0"
+	DefaultConfigFilePath = "~/.keyfactor/command_config.json"
+	DefaultClientTimeout  = 60
+
+	EnvKeyfactorHostName      = "KEYFACTOR_HOSTNAME"
+	EnvKeyfactorPort          = "KEYFACTOR_PORT"
+	EnvKeyfactorAPIPath       = "KEYFACTOR_API_PATH"
+	EnvKeyfactorSkipVerify    = "KEYFACTOR_SKIP_VERIFY"
+	EnvKeyfactorCACert        = "KEYFACTOR_CA_CERT"
+	EnvKeyfactorAuthProvider  = "KEYFACTOR_AUTH_PROVIDER"
+	EnvKeyfactorClientTimeout = "KEYFACTOR_CLIENT_TIMEOUT"
 )
 
 // Authenticator is an interface for authentication to Keyfactor Command API.
@@ -46,10 +54,27 @@ type Authenticator interface {
 	GetHttpClient() (*http.Client, error)
 }
 
+// roundTripperFunc is a helper type to create a custom RoundTripper
+type roundTripperFunc func(req *http.Request) (*http.Response, error)
+
+// RoundTrip executes a single HTTP transaction
+func (f roundTripperFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
+}
+
 // CommandAuthConfig represents the base configuration needed for authentication to Keyfactor Command API.
 type CommandAuthConfig struct {
 	// ConfigType is the type of configuration
 	ConfigType string `json:"config_type"`
+
+	//ConfigProfile is the profile of the configuration
+	ConfigProfile string
+
+	//ConfigFilePath is the path to the configuration file
+	ConfigFilePath string
+
+	// FileConfig
+	FileConfig *authconfig.Server
 
 	// AuthHeader is the header to be used for authentication to Keyfactor Command API
 	AuthHeader string `json:"auth_header"`
@@ -58,7 +83,7 @@ type CommandAuthConfig struct {
 	CommandHostName string `json:"command_host_name"`
 
 	// CommandPort is the port of the Keyfactor Command API
-	CommandPort string `json:"command_port"`
+	CommandPort int `json:"command_port"`
 
 	// CommandAPIPath is the path of the Keyfactor Command API, default is "KeyfactorAPI"
 	CommandAPIPath string `json:"command_api_path"`
@@ -72,37 +97,69 @@ type CommandAuthConfig struct {
 	// SkipVerify is a flag to skip verification of the server's certificate chain and host name. Default is false.
 	SkipVerify bool `json:"skip_verify"`
 
-	// HttpClient is the http client to be used for authentication to Keyfactor Command API
+	// HttpClientTimeout is the timeout for the http Client
+	HttpClientTimeout int `json:"client_timeout"`
+
+	// HttpClient is the http Client to be used for authentication to Keyfactor Command API
 	HttpClient *http.Client
 }
 
+// WithCommandHostName sets the hostname for authentication to Keyfactor Command API.
 func (c *CommandAuthConfig) WithCommandHostName(hostName string) *CommandAuthConfig {
 	c.CommandHostName = hostName
 	return c
 }
 
-func (c *CommandAuthConfig) WithCommandPort(port string) *CommandAuthConfig {
+// WithCommandPort sets the port for authentication to Keyfactor Command API.
+func (c *CommandAuthConfig) WithCommandPort(port int) *CommandAuthConfig {
 	c.CommandPort = port
 	return c
 }
 
+// WithCommandAPIPath sets the API path for authentication to Keyfactor Command API.
 func (c *CommandAuthConfig) WithCommandAPIPath(apiPath string) *CommandAuthConfig {
 	c.CommandAPIPath = apiPath
 	return c
 }
 
+// WithCommandCACert sets the CA certificate for authentication to Keyfactor Command API.
 func (c *CommandAuthConfig) WithCommandCACert(caCert string) *CommandAuthConfig {
 	c.CommandCACert = caCert
 	return c
 }
 
+// WithSkipVerify sets the flag to skip verification of the server's certificate chain and host name.
 func (c *CommandAuthConfig) WithSkipVerify(skipVerify bool) *CommandAuthConfig {
 	c.SkipVerify = skipVerify
 	return c
 }
 
+// WithHttpClient sets the http Client for authentication to Keyfactor Command API.
 func (c *CommandAuthConfig) WithHttpClient(client *http.Client) *CommandAuthConfig {
 	c.HttpClient = client
+	return c
+}
+
+// WithConfigFile sets the configuration file for authentication to Keyfactor Command API.
+func (c *CommandAuthConfig) WithConfigFile(configFilePath string) *CommandAuthConfig {
+
+	if c.ConfigProfile == "" {
+		c.ConfigProfile = "default"
+	}
+
+	c.ConfigFilePath = configFilePath
+	return c
+}
+
+// WithConfigProfile sets the configuration profile for authentication to Keyfactor Command API.
+func (c *CommandAuthConfig) WithConfigProfile(profile string) *CommandAuthConfig {
+	c.ConfigProfile = profile
+	return c
+}
+
+// WithClientTimeout sets the timeout for the http Client.
+func (c *CommandAuthConfig) WithClientTimeout(timeout int) *CommandAuthConfig {
+	c.HttpClientTimeout = timeout
 	return c
 }
 
@@ -112,12 +169,19 @@ func (c *CommandAuthConfig) ValidateAuthConfig() error {
 		if hostName, ok := os.LookupEnv(EnvKeyfactorHostName); ok {
 			c.CommandHostName = hostName
 		} else {
-			return fmt.Errorf("command_host_name or environment variable %s is required", EnvKeyfactorHostName)
+			if c.FileConfig != nil {
+				c.CommandHostName = c.FileConfig.Host
+			} else {
+				return fmt.Errorf("command_host_name or environment variable %s is required", EnvKeyfactorHostName)
+			}
 		}
 	}
-	if c.CommandPort == "" {
+	if c.CommandPort <= 0 {
 		if port, ok := os.LookupEnv(EnvKeyfactorPort); ok {
-			c.CommandPort = port
+			configPort, pErr := strconv.Atoi(port)
+			if pErr == nil {
+				c.CommandPort = configPort
+			}
 		} else {
 			c.CommandPort = DefaultCommandPort
 		}
@@ -127,6 +191,16 @@ func (c *CommandAuthConfig) ValidateAuthConfig() error {
 			c.CommandAPIPath = apiPath
 		} else {
 			c.CommandAPIPath = DefaultCommandAPIPath
+		}
+	}
+	if c.HttpClientTimeout <= 0 {
+		if timeout, ok := os.LookupEnv(EnvKeyfactorClientTimeout); ok {
+			configTimeout, tErr := strconv.Atoi(timeout)
+			if tErr == nil {
+				c.HttpClientTimeout = configTimeout
+			}
+		} else {
+			c.HttpClientTimeout = DefaultClientTimeout
 		}
 	}
 	c.SetClient(nil)
@@ -151,7 +225,52 @@ func (c *CommandAuthConfig) ValidateAuthConfig() error {
 	return nil
 }
 
-// SetClient sets the http client for authentication to Keyfactor Command API.
+// BuildTransport creates a custom http Transport for authentication to Keyfactor Command API.
+func (c *CommandAuthConfig) BuildTransport() (*http.Transport, error) {
+	output := &http.Transport{
+		Proxy: http.ProxyFromEnvironment,
+		TLSClientConfig: &tls.Config{
+			Renegotiation: tls.RenegotiateOnceAsClient,
+		},
+		TLSHandshakeTimeout: 10 * time.Second,
+	}
+	if c.SkipVerify {
+		output.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
+	}
+
+	// Load the system certs
+	if c.CommandCACert != "" {
+		rootCAs, pErr := x509.SystemCertPool()
+		if pErr != nil {
+			return nil, pErr
+		}
+		if rootCAs == nil {
+			rootCAs = x509.NewCertPool()
+		}
+
+		// check if CommandCACert is a file
+		if _, err := os.Stat(c.CommandCACert); err == nil {
+			cert, ioErr := os.ReadFile(c.CommandCACert)
+			if ioErr != nil {
+				return nil, ioErr
+			}
+			// Append your custom cert to the pool
+			if ok := rootCAs.AppendCertsFromPEM(cert); !ok {
+				return nil, fmt.Errorf("failed to append custom CA cert to pool")
+			}
+		} else {
+			// Append your custom cert to the pool
+			if ok := rootCAs.AppendCertsFromPEM([]byte(c.CommandCACert)); !ok {
+				return nil, fmt.Errorf("failed to append custom CA cert to pool")
+			}
+		}
+
+		output.TLSClientConfig.RootCAs = rootCAs
+	}
+	return output, nil
+}
+
+// SetClient sets the http Client for authentication to Keyfactor Command API.
 func (c *CommandAuthConfig) SetClient(client *http.Client) *http.Client {
 	if client != nil {
 		c.HttpClient = client
@@ -162,7 +281,7 @@ func (c *CommandAuthConfig) SetClient(client *http.Client) *http.Client {
 	return c.HttpClient
 }
 
-// updateCACerts updates the CA certs for the http client.
+// updateCACerts updates the CA certs for the http Client.
 func (c *CommandAuthConfig) updateCACerts() error {
 	// check if CommandCACert is set
 	if c.CommandCACert == "" {
@@ -174,7 +293,7 @@ func (c *CommandAuthConfig) updateCACerts() error {
 		}
 	}
 
-	// ensure client is set
+	// ensure Client is set
 	c.SetClient(nil)
 
 	// Load the system certs
@@ -203,7 +322,7 @@ func (c *CommandAuthConfig) updateCACerts() error {
 		}
 	}
 
-	// Trust the augmented cert pool in our client
+	// Trust the augmented cert pool in our Client
 	c.HttpClient.Transport = &http.Transport{
 		TLSClientConfig: &tls.Config{
 			RootCAs: rootCAs,
@@ -247,7 +366,7 @@ func (c *CommandAuthConfig) Authenticate() error {
 		req.Header.Set(key, value)
 	}
 
-	c.HttpClient.Timeout = 60 * time.Second
+	c.HttpClient.Timeout = time.Duration(c.HttpClientTimeout) * time.Second
 
 	cResp, cErr := c.HttpClient.Do(req)
 	if cErr != nil {
@@ -294,6 +413,24 @@ func (c *CommandAuthConfig) Authenticate() error {
 
 }
 
+// LoadCACertificates loads the custom CA certificates from a file.
+func LoadCACertificates(certFile string) (*x509.CertPool, error) {
+	// Read the file containing the custom CA certificate
+	certBytes, err := os.ReadFile(certFile)
+	if err != nil {
+		return nil, err
+	}
+
+	// Create a new CertPool and append the custom CA certificate
+	certPool := x509.NewCertPool()
+	if ok := certPool.AppendCertsFromPEM(certBytes); !ok {
+		return nil, err
+	}
+
+	return certPool, nil
+}
+
+// FindCACertificate reads the CA certificate from a file and returns a slice of x509.Certificate.
 func FindCACertificate(caCertificatePath string) ([]*x509.Certificate, error) {
 	if caCertificatePath == "" {
 		return nil, nil
@@ -326,6 +463,7 @@ func FindCACertificate(caCertificatePath string) ([]*x509.Certificate, error) {
 	return caChain, nil
 }
 
+// DecodePEMBytes decodes the PEM encoded bytes into a slice of PEM blocks.
 func DecodePEMBytes(buf []byte) ([]*pem.Block, []byte, error) {
 	var privKey []byte
 	var certificates []*pem.Block
@@ -341,4 +479,65 @@ func DecodePEMBytes(buf []byte) ([]*pem.Block, []byte, error) {
 		}
 	}
 	return certificates, privKey, nil
+}
+
+// LoadConfig loads the configuration file and returns the server configuration.
+func (c *CommandAuthConfig) LoadConfig(profile string, configFilePath string) (*authconfig.Server, error) {
+	if configFilePath == "" {
+		if c.ConfigFilePath != "" {
+			configFilePath = c.ConfigFilePath
+		} else {
+			configFilePath = DefaultConfigFilePath
+		}
+	}
+	expandedPath, err := expandPath(configFilePath)
+	if err != nil {
+		return nil, err
+	}
+
+	file, err := os.Open(expandedPath)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	var config authconfig.Config
+	decoder := json.NewDecoder(file)
+	if jErr := decoder.Decode(&config); jErr != nil {
+		return nil, jErr
+	}
+
+	if profile == "" {
+		if c.ConfigProfile != "" {
+			profile = c.ConfigProfile
+		} else {
+			profile = "default"
+		}
+	}
+
+	server, ok := config.Servers[profile]
+	if !ok {
+		return nil, fmt.Errorf("profile %s not found in config file", profile)
+	}
+
+	c.FileConfig = &server
+	c.CommandHostName = server.Host
+	c.CommandPort = server.Port
+	c.CommandAPIPath = server.APIPath
+	c.CommandCACert = server.CACertPath // TODO: Implement CACert in config file
+	c.SkipVerify = server.SkipTLSVerify
+
+	return &server, nil
+}
+
+// expandPath expands the path to include the user's home directory.
+func expandPath(path string) (string, error) {
+	if path[:2] == "~/" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", err
+		}
+		return filepath.Join(home, path[2:]), nil
+	}
+	return path, nil
 }

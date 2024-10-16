@@ -27,12 +27,12 @@ variable "keyfactor_client_secret_11_5_0" {
 variable "keyfactor_hostname_11_5_0_KC" {
   description = "The hostname of the Keyfactor instance"
   type        = string
-  default     = "pkiaas-spb.eastus2.cloudapp.azure.com"
+  default     = "int-oidc-lab.eastus2.cloudapp.azure.com"
 }
 
 variable "keyfactor_auth_hostname_11_5_0_KC" {
   description = "The hostname of the KeyCloak instance to authenticate to for a Keyfactor Command access token"
   type        = string
-  default     = "pkiaas-spb.eastus2.cloudapp.azure.com"
+  default     = "int-oidc-lab.eastus2.cloudapp.azure.com"
 }
 
