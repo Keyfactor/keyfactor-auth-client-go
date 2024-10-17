@@ -10,15 +10,15 @@ import (
 
 // Server represents the server configuration for authentication.
 type Server struct {
-	Host          string       `json:"host,omitempty" yaml:"host,omitempty"`                       // Host is the Command server DNS name or IP address.
-	Port          int          `json:"port,omitempty" yaml:"port,omitempty"`                       // Port is the Command server port.
-	AuthHostname  string       `json:"auth_hostname,omitempty" yaml:"auth_hostname,omitempty"`     // AuthHostname is the authentication hostname.
-	AuthPort      int          `json:"auth_port,omitempty" yaml:"auth_port,omitempty"`             // AuthPort is the authentication port.
+	Host string `json:"host,omitempty" yaml:"host,omitempty"` // Host is the Command server DNS name or IP address.
+	Port int    `json:"port,omitempty" yaml:"port,omitempty"` // Port is the Command server port.
+	//AuthPort      int          `json:"auth_port,omitempty" yaml:"auth_port,omitempty"`             // AuthPort is the authentication port.
 	Username      string       `json:"username,omitempty" yaml:"username,omitempty"`               // Username is the username for authentication.
 	Password      string       `json:"password,omitempty" yaml:"password,omitempty"`               // Password is the password for authentication.
+	Domain        string       `json:"domain,omitempty" yaml:"domain,omitempty"`                   // Domain is the domain for authentication.
 	ClientID      string       `json:"client_id,omitempty" yaml:"client_id,omitempty"`             // ClientID is the client ID for OAuth.
 	ClientSecret  string       `json:"client_secret,omitempty" yaml:"client_secret,omitempty"`     // ClientSecret is the client secret for OAuth.
-	Domain        string       `json:"domain,omitempty" yaml:"domain,omitempty"`                   // Domain is the domain for authentication.
+	OAuthTokenUrl string       `json:"oauth_token_url,omitempty" yaml:"auth_hostname,omitempty"`   // OAuthTokenUrl is full URL for OAuth token request endpoint.
 	APIPath       string       `json:"api_path,omitempty" yaml:"api_path,omitempty"`               // APIPath is the API path.
 	AuthProvider  AuthProvider `json:"auth_provider,omitempty" yaml:"auth_provider,omitempty"`     // AuthProvider contains the authentication provider details.
 	SkipTLSVerify bool         `json:"skip_tls_verify,omitempty" yaml:"skip_tls_verify,omitempty"` // TLSVerify determines whether to verify the TLS certificate.
@@ -28,9 +28,9 @@ omitempty"` // CACertPath is the path to the CA certificate to trust.
 
 // AuthProvider represents the authentication provider configuration.
 type AuthProvider struct {
-	Type       string      `json:"type,omitempty" yaml:"type,omitempty"`             // Type is the type of authentication provider.
-	Profile    string      `json:"profile,omitempty" yaml:"profile,omitempty"`       // Profile is the profile of the authentication provider.
-	Parameters interface{} `json:"parameters,omitempty" yaml:"parameters,omitempty"` // Parameters are additional parameters for the authentication provider.
+	Type       string                 `json:"type,omitempty" yaml:"type,omitempty"`             // Type is the type of authentication provider.
+	Profile    string                 `json:"profile,omitempty" yaml:"profile,omitempty"`       // Profile is the profile of the authentication provider.
+	Parameters map[string]interface{} `json:"parameters,omitempty" yaml:"parameters,omitempty"` // Parameters are additional parameters for the authentication provider.
 }
 
 // Config represents the overall configuration structure.

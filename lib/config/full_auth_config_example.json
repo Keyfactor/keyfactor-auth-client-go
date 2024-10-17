@@ -1,9 +1,8 @@
 {
   "servers": {
-    "default_profile": {
+    "default": {
       "host": "keyfactor.command.kfdelivery.com",
-      "auth_hostname": "idp.keyfactor.command.kfdelivery.com",
-      "auth_port": 8444,
+      "oauth_token_url": "idp.keyfactor.command.kfdelivery.com",
       "username": "keyfactor",
       "password": "password",
       "client_id": "client-id",
@@ -19,10 +18,9 @@
         }
       }
     },
-    "alternative_profile": {
+    "server2": {
       "host": "keyfactor2.command.kfdelivery.com",
-      "auth_hostname": "idp.keyfactor2.command.kfdelivery.com",
-      "auth_port": 8444,
+      "oauth_token_url": "idp.keyfactor2.command.kfdelivery.com",
       "username": "keyfactor2",
       "password": "password2",
       "client_id": "client-id2",
