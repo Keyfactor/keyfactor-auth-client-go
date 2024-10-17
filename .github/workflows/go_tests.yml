@@ -1,6 +1,8 @@
 name: Go Test Workflow
 
-on: [ push ]
+on:
+  push:
+  workflow_dispatch:
 
 jobs:
   test:
@@ -8,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        environment: [ "KFC_10_5_0", "KFC_11_5_0_KC"]
+        environment: [ "KFC_10_5_0", "KFC_12_3_0_KC"]
     environment: ${{ matrix.environment }}
     steps:
       - name: Check out code
