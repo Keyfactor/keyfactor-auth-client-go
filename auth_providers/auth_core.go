@@ -38,6 +38,7 @@ const (
 	DefaultAPIClientName  = "APIClient"
 	DefaultProductVersion = "10.5.0.0"
 	DefaultConfigFilePath = "~/.keyfactor/command_config.json"
+	DefaultConfigProfile  = "default"
 	DefaultClientTimeout  = 60
 
 	EnvKeyfactorHostName      = "KEYFACTOR_HOSTNAME"
@@ -46,6 +47,8 @@ const (
 	EnvKeyfactorSkipVerify    = "KEYFACTOR_SKIP_VERIFY"
 	EnvKeyfactorCACert        = "KEYFACTOR_CA_CERT"
 	EnvKeyfactorAuthProvider  = "KEYFACTOR_AUTH_PROVIDER"
+	EnvKeyfactorAuthProfile   = "KEYFACTOR_AUTH_CONFIG_PROFILE"
+	EnvKeyfactorConfigFile    = "KEYFACTOR_AUTH_CONFIG_FILE"
 	EnvKeyfactorClientTimeout = "KEYFACTOR_CLIENT_TIMEOUT"
 )
 
@@ -104,8 +107,21 @@ type CommandAuthConfig struct {
 	HttpClient *http.Client
 }
 
+func cleanHostName(hostName string) string {
+	// check if hostname is a url and if so, extract the hostname
+	if strings.Contains(hostName, "://") {
+		hostName = strings.Split(hostName, "://")[1]
+		//remove any trailing paths
+		hostName = strings.Split(hostName, "/")[0]
+		// remove any trailing slashes
+		hostName = strings.TrimRight(hostName, "/")
+	}
+	return hostName
+}
+
 // WithCommandHostName sets the hostname for authentication to Keyfactor Command API.
 func (c *CommandAuthConfig) WithCommandHostName(hostName string) *CommandAuthConfig {
+	hostName = cleanHostName(hostName)
 	c.CommandHostName = hostName
 	return c
 }
@@ -144,7 +160,12 @@ func (c *CommandAuthConfig) WithHttpClient(client *http.Client) *CommandAuthConf
 func (c *CommandAuthConfig) WithConfigFile(configFilePath string) *CommandAuthConfig {
 
 	if c.ConfigProfile == "" {
-		c.ConfigProfile = "default"
+		// check if profile is set in environment
+		if profile, ok := os.LookupEnv(EnvKeyfactorAuthProfile); ok {
+			c.ConfigProfile = profile
+		} else {
+			c.ConfigProfile = DefaultConfigProfile
+		}
 	}
 
 	c.ConfigFilePath = configFilePath
@@ -153,7 +174,16 @@ func (c *CommandAuthConfig) WithConfigFile(configFilePath string) *CommandAuthCo
 
 // WithConfigProfile sets the configuration profile for authentication to Keyfactor Command API.
 func (c *CommandAuthConfig) WithConfigProfile(profile string) *CommandAuthConfig {
-	c.ConfigProfile = profile
+	if profile == "" {
+		// check if profile is set in environment
+		if profile, ok := os.LookupEnv(EnvKeyfactorAuthProfile); ok {
+			c.ConfigProfile = profile
+		} else {
+			c.ConfigProfile = DefaultConfigProfile
+		}
+	} else {
+		c.ConfigProfile = profile
+	}
 	return c
 }
 
@@ -167,10 +197,10 @@ func (c *CommandAuthConfig) WithClientTimeout(timeout int) *CommandAuthConfig {
 func (c *CommandAuthConfig) ValidateAuthConfig() error {
 	if c.CommandHostName == "" {
 		if hostName, ok := os.LookupEnv(EnvKeyfactorHostName); ok {
-			c.CommandHostName = hostName
+			c.CommandHostName = cleanHostName(hostName)
 		} else {
-			if c.FileConfig != nil {
-				c.CommandHostName = c.FileConfig.Host
+			if c.FileConfig != nil && c.FileConfig.Host != "" {
+				c.CommandHostName = cleanHostName(c.FileConfig.Host)
 			} else {
 				return fmt.Errorf("command_host_name or environment variable %s is required", EnvKeyfactorHostName)
 			}
@@ -482,51 +512,91 @@ func DecodePEMBytes(buf []byte) ([]*pem.Block, []byte, error) {
 }
 
 // LoadConfig loads the configuration file and returns the server configuration.
-func (c *CommandAuthConfig) LoadConfig(profile string, configFilePath string) (*authconfig.Server, error) {
+func (c *CommandAuthConfig) LoadConfig(profile string, configFilePath string, silentLoad bool) (
+	*authconfig.Server,
+	error,
+) {
 	if configFilePath == "" {
-		if c.ConfigFilePath != "" {
-			configFilePath = c.ConfigFilePath
+		// check if config file is set in environment
+		if config, ok := os.LookupEnv(EnvKeyfactorConfigFile); ok {
+			configFilePath = config
 		} else {
 			configFilePath = DefaultConfigFilePath
 		}
+	} else {
+		c.ConfigFilePath = configFilePath
 	}
 	expandedPath, err := expandPath(configFilePath)
 	if err != nil {
-		return nil, err
+		if !silentLoad {
+			return nil, err
+		}
+		// if silentLoad is true then eat the error and return nil
+		return nil, nil
 	}
 
 	file, err := os.Open(expandedPath)
 	if err != nil {
-		return nil, err
+		if !silentLoad {
+			return nil, err
+		}
+		// if silentLoad is true then eat the error and return nil
+		return nil, nil
 	}
 	defer file.Close()
 
 	var config authconfig.Config
 	decoder := json.NewDecoder(file)
 	if jErr := decoder.Decode(&config); jErr != nil {
-		return nil, jErr
+		if !silentLoad {
+			return nil, jErr
+		}
+		// if silentLoad is true then eat the error and return nil
+		return nil, nil
 	}
 
 	if profile == "" {
 		if c.ConfigProfile != "" {
 			profile = c.ConfigProfile
 		} else {
-			profile = "default"
+			profile = DefaultConfigProfile
 		}
 	}
 
 	server, ok := config.Servers[profile]
 	if !ok {
-		return nil, fmt.Errorf("profile %s not found in config file", profile)
+		if !silentLoad {
+			return nil, fmt.Errorf("profile %s not found in config file", profile)
+		}
+		// if silentLoad is true then eat the error and return nil
+		return nil, nil
 	}
 
 	c.FileConfig = &server
-	c.CommandHostName = server.Host
-	c.CommandPort = server.Port
-	c.CommandAPIPath = server.APIPath
-	c.CommandCACert = server.CACertPath // TODO: Implement CACert in config file
-	c.SkipVerify = server.SkipTLSVerify
 
+	if !silentLoad {
+		c.CommandHostName = server.Host
+		c.CommandPort = server.Port
+		c.CommandAPIPath = server.APIPath
+		c.CommandCACert = server.CACertPath
+		c.SkipVerify = server.SkipTLSVerify
+	} else {
+		if c.CommandHostName == "" {
+			c.CommandHostName = server.Host
+		}
+		if c.CommandPort <= 0 {
+			c.CommandPort = server.Port
+		}
+		if c.CommandAPIPath == "" {
+			c.CommandAPIPath = server.APIPath
+		}
+		if c.CommandCACert == "" {
+			c.CommandCACert = server.CACertPath
+		}
+		if c.SkipVerify {
+			c.SkipVerify = server.SkipTLSVerify
+		}
+	}
 	return &server, nil
 }
 

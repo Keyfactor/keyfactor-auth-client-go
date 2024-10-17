@@ -19,11 +19,13 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strings"
 )
 
 const (
 	EnvKeyfactorUsername = "KEYFACTOR_USERNAME"
 	EnvKeyfactorPassword = "KEYFACTOR_PASSWORD"
+	EnvKeyfactorDomain   = "KEYFACTOR_DOMAIN"
 )
 
 // Basic Authenticator
@@ -49,6 +51,9 @@ type CommandAuthConfigBasic struct {
 
 	// Password is the password to be used for authentication to Keyfactor Command API
 	Password string `json:"password,omitempty"`
+
+	// Domain is the domain of the Active Directory used to authenticate to Keyfactor Command API
+	Domain string `json:"domain,omitempty"`
 }
 
 // NewBasicAuthAuthenticatorBuilder creates a new instance of CommandAuthConfigBasic
@@ -116,6 +121,7 @@ func (a *CommandAuthConfigBasic) ValidateAuthConfig() error {
 	serverConfig, _ := a.CommandAuthConfig.LoadConfig(
 		a.CommandAuthConfig.ConfigProfile,
 		a.CommandAuthConfig.ConfigFilePath,
+		false,
 	)
 	if a.Username == "" {
 		if username, ok := os.LookupEnv(EnvKeyfactorUsername); ok {
@@ -137,6 +143,18 @@ func (a *CommandAuthConfigBasic) ValidateAuthConfig() error {
 			} else {
 				return fmt.Errorf("password or environment variable %s is required", EnvKeyfactorPassword)
 			}
+		}
+	}
+
+	domainErr := a.parseUsernameDomain()
+	if domainErr != nil {
+		return domainErr
+
+	}
+
+	if a.Domain == "" {
+		if domain, ok := os.LookupEnv(EnvKeyfactorDomain); ok {
+			a.Domain = domain
 		}
 	}
 
@@ -169,4 +187,27 @@ func (a *CommandAuthConfigBasic) Authenticate() error {
 	}
 
 	return a.CommandAuthConfig.Authenticate()
+}
+
+// parseUsernameDomain parses the username to extract the domain if it's included in the username.
+// It supports two formats: "username@domain" and "domain\username".
+func (a *CommandAuthConfigBasic) parseUsernameDomain() error {
+	domainErr := fmt.Errorf("domain or environment variable %s is required", EnvKeyfactorDomain)
+	if strings.Contains(a.Username, "@") {
+		dSplit := strings.Split(a.Username, "@")
+		if len(dSplit) != 2 {
+			return domainErr
+		}
+		a.Username = dSplit[0] // remove domain from username
+		a.Domain = dSplit[1]
+	} else if strings.Contains(a.Username, "\\") {
+		dSplit := strings.Split(a.Username, "\\")
+		if len(dSplit) != 2 {
+			return domainErr
+		}
+		a.Domain = dSplit[0]
+		a.Username = dSplit[1] // remove domain from username
+	}
+
+	return nil
 }

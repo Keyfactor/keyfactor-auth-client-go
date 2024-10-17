@@ -1,6 +1,21 @@
+// Copyright 2024 Keyfactor
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package auth_providers_test
 
 import (
+	"fmt"
 	"net/http"
 	"os"
 	"testing"
@@ -75,12 +90,30 @@ func TestCommandAuthConfigBasic_Authenticate(t *testing.T) {
 		return
 	}
 
-	config := &auth_providers.CommandAuthConfigBasic{}
+	noParamsConfig := &auth_providers.CommandAuthConfigBasic{}
+	authBasicTest(t, "with complete Environmental variables", false, noParamsConfig)
 
-	err := config.Authenticate()
-	if err != nil {
-		t.Fatalf("expected no error, got %v", err)
+	// Environment variables are not set
+	t.Log("Unsetting environment variables")
+	username, password, domain := exportBasicEnvVariables()
+	unsetBasicEnvVariables()
+
+	incompleteEnvConfig := &auth_providers.CommandAuthConfigBasic{}
+	authBasicTest(t, "with incomplete Environmental variables", true, incompleteEnvConfig)
+
+	usernameOnlyConfig := &auth_providers.CommandAuthConfigBasic{
+		Username: "test-username",
 	}
+	authBasicTest(t, "Username Only", true, usernameOnlyConfig)
+
+	fullParamsConfig := &auth_providers.CommandAuthConfigBasic{
+		Username: username,
+		Password: password,
+		Domain:   domain,
+	}
+	authBasicTest(t, "w/ full params variables", false, fullParamsConfig)
+	t.Log("Resetting environment variables")
+	setBasicEnvVariables(username, password, domain)
 }
 
 func TestCommandAuthConfigBasic_Build(t *testing.T) {
@@ -102,4 +135,49 @@ func TestCommandAuthConfigBasic_Build(t *testing.T) {
 	if authenticator == nil {
 		t.Fatalf("expected a non-nil Authenticator")
 	}
+}
+
+// setBasicEnvVariables sets the basic environment variables
+func setBasicEnvVariables(username, password, domain string) {
+	os.Setenv(auth_providers.EnvKeyfactorUsername, username)
+	os.Setenv(auth_providers.EnvKeyfactorPassword, password)
+	os.Setenv(auth_providers.EnvKeyfactorDomain, domain)
+}
+
+// exportBasicEnvVariables sets the basic environment variables
+func exportBasicEnvVariables() (string, string, string) {
+	username := os.Getenv(auth_providers.EnvKeyfactorUsername)
+	password := os.Getenv(auth_providers.EnvKeyfactorPassword)
+	domain := os.Getenv(auth_providers.EnvKeyfactorDomain)
+	return username, password, domain
+}
+
+// unsetBasicEnvVariables unsets the basic environment variables
+func unsetBasicEnvVariables() {
+	os.Unsetenv(auth_providers.EnvKeyfactorUsername)
+	os.Unsetenv(auth_providers.EnvKeyfactorPassword)
+	os.Unsetenv(auth_providers.EnvKeyfactorDomain)
+}
+
+func authBasicTest(t *testing.T, testName string, allowFail bool, config *auth_providers.CommandAuthConfigBasic) {
+	t.Run(
+		fmt.Sprintf("Basic Auth Test %s", testName), func(t *testing.T) {
+
+			err := config.Authenticate()
+			if allowFail {
+				if err == nil {
+					t.Errorf("Basic auth test '%s' should have failed", testName)
+					t.FailNow()
+					return
+				}
+				t.Logf("Basic auth test '%s' failed as expected with %v", testName, err)
+				return
+			}
+			if err != nil {
+				t.Errorf("Basic auth test '%s' failed with %v", testName, err)
+				t.FailNow()
+				return
+			}
+		},
+	)
 }

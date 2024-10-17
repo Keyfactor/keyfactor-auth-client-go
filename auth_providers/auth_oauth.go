@@ -5,8 +5,10 @@ import (
 	"crypto/x509"
 	"fmt"
 	"net/http"
+	"os"
 	"time"
 
+	authconfig "github.com/Keyfactor/keyfactor-auth-client-go/auth_config"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/clientcredentials"
 )
@@ -28,7 +30,7 @@ const (
 	EnvKeyfactorAuthTokenURL = "KEYFACTOR_AUTH_TOKEN_URL"
 
 	// EnvKeyfactorAccessToken is the environment variable used to set the access token for oauth Client credentials authentication
-	EnvKeyfactorAccessToken = "KEYFACTOR_ACCESS_TOKEN"
+	EnvKeyfactorAccessToken = "KEYFACTOR_AUTH_ACCESS_TOKEN"
 
 	// EnvKeyfactorAuthAudience is the environment variable used to set the audience for oauth Client credentials
 	//authentication
@@ -36,12 +38,6 @@ const (
 
 	// EnvKeyfactorAuthScopes is the environment variable used to set the scopes for oauth Client credentials authentication
 	EnvKeyfactorAuthScopes = "KEYFACTOR_AUTH_SCOPES"
-
-	// EnvKeyfactorAuthHostname is the environment variable used to set the hostname for oauth Client credentials authentication
-	EnvKeyfactorAuthHostname = "KEYFACTOR_AUTH_HOSTNAME"
-
-	// EnvKeyfactorAuthPort is the environment variable used to set the port for oauth Client credentials authentication
-	EnvKeyfactorAuthPort = "KEYFACTOR_AUTH_PORT"
 
 	// EnvAuthCACert is a path to a CA certificate for the OAuth Client credentials authentication
 	EnvAuthCACert = "KEYFACTOR_AUTH_CA_CERT"
@@ -92,11 +88,11 @@ type CommandConfigOauth struct {
 	// TokenURL is the token URL for Keycloak authentication
 	TokenURL string `json:"token_url"`
 
-	// AuthPort
-	AuthPort string `json:"auth_port,omitempty"`
+	//// AuthPort
+	//AuthPort string `json:"auth_port,omitempty"`
 
-	// AuthType is the type of Keycloak auth to use such as client_credentials, password, etc.
-	AuthType string `json:"auth_type,omitempty"`
+	//// AuthType is the type of Keycloak auth to use such as client_credentials, password, etc.
+	//AuthType string `json:"auth_type,omitempty"`
 }
 
 // NewOAuthAuthenticatorBuilder creates a new CommandConfigOauth instance.
@@ -134,23 +130,46 @@ func (b *CommandConfigOauth) WithAudience(audience string) *CommandConfigOauth {
 	return b
 }
 
-// WithCACertificatePath sets the CA certificate path for Keycloak authentication.
+// WithCaCertificatePath sets the CA certificate path for Keycloak authentication.
 func (b *CommandConfigOauth) WithCaCertificatePath(caCertificatePath string) *CommandConfigOauth {
 	b.CACertificatePath = caCertificatePath
 	return b
 }
 
-// WithCACertificates sets the CA certificates for Keycloak authentication.
+// WithCaCertificates sets the CA certificates for Keycloak authentication.
 func (b *CommandConfigOauth) WithCaCertificates(caCertificates []*x509.Certificate) *CommandConfigOauth {
 	b.CACertificates = caCertificates
 	return b
 }
 
+// WithAccessToken sets the access token for Keycloak authentication.
+func (b *CommandConfigOauth) WithAccessToken(accessToken string) *CommandConfigOauth {
+	if accessToken != "" {
+		b.AccessToken = accessToken
+	}
+
+	return b
+}
+
+// GetHttpClient returns an HTTP client for oAuth authentication.
 func (b *CommandConfigOauth) GetHttpClient() (*http.Client, error) {
-	//validate the configuration
 	cErr := b.ValidateAuthConfig()
 	if cErr != nil {
 		return nil, cErr
+	}
+
+	if b.AccessToken != "" {
+		return &http.Client{
+			Transport: &oauth2.Transport{
+				Base: http.DefaultTransport,
+				Source: oauth2.StaticTokenSource(
+					&oauth2.Token{
+						AccessToken: b.AccessToken,
+						TokenType:   DefaultTokenPrefix,
+					},
+				),
+			},
+		}, nil
 	}
 
 	config := &clientcredentials.Config{
@@ -166,9 +185,7 @@ func (b *CommandConfigOauth) GetHttpClient() (*http.Client, error) {
 
 	if b.Audience != "" {
 		config.EndpointParams = map[string][]string{
-			"Audience": {
-				b.Audience,
-			},
+			"Audience": {b.Audience},
 		}
 	}
 
@@ -199,22 +216,93 @@ func (b *CommandConfigOauth) Build() (Authenticator, error) {
 	return &OAuthAuthenticator{Client: client}, nil
 }
 
+func (b *CommandConfigOauth) LoadConfig(profile, path string, silentLoad bool) (*authconfig.Server, error) {
+	serverConfig, sErr := b.CommandAuthConfig.LoadConfig(profile, path, silentLoad)
+	if sErr != nil {
+		if !silentLoad {
+			return nil, sErr
+		}
+		// if silentLoad is true, return nil and nil
+		return nil, nil
+	}
+
+	if !silentLoad {
+		b.ClientID = serverConfig.ClientID
+		b.ClientSecret = serverConfig.ClientSecret
+		b.TokenURL = serverConfig.OAuthTokenUrl
+		b.CACertificatePath = serverConfig.CACertPath
+
+	} else {
+		if b.ClientID == "" {
+			b.ClientID = serverConfig.ClientID
+		}
+
+		if b.ClientSecret == "" {
+			b.ClientSecret = serverConfig.ClientSecret
+		}
+
+		if b.TokenURL == "" {
+			b.TokenURL = serverConfig.OAuthTokenUrl
+		}
+
+		//if b.AccessToken == "" {
+		//	b.AccessToken = serverConfig.AccessToken
+		//}
+
+		//if b.Audience == "" {
+		//	b.Audience = serverConfig.Audience
+		//}
+		//
+		//if b.Scopes == nil || len(b.Scopes) == 0 {
+		//	b.Scopes = serverConfig.Scopes
+		//}
+
+		if b.CACertificatePath == "" {
+			b.CACertificatePath = serverConfig.CACertPath
+		}
+	}
+
+	return serverConfig, nil
+}
+
 func (b *CommandConfigOauth) ValidateAuthConfig() error {
-	if b.ClientID == "" {
-		return fmt.Errorf("Client ID is required")
-	}
+	// silently load the server config
+	_, _ = b.CommandAuthConfig.LoadConfig(
+		b.CommandAuthConfig.ConfigProfile,
+		b.CommandAuthConfig.ConfigFilePath,
+		true,
+	)
+	if b.AccessToken == "" {
+		// check if access token is set in the environment
+		if accessToken, ok := os.LookupEnv(EnvKeyfactorAccessToken); ok {
+			b.AccessToken = accessToken
+		} else {
+			// check if client ID, client secret, and token URL are provided
+			if b.ClientID == "" {
+				if clientId, idOk := os.LookupEnv(EnvKeyfactorClientID); idOk {
+					b.ClientID = clientId
+				} else {
+					return fmt.Errorf("client ID is required")
+				}
+			}
 
-	if b.ClientSecret == "" {
-		return fmt.Errorf("Client secret is required")
-	}
+			if b.ClientSecret == "" {
+				if clientSecret, sOk := os.LookupEnv(EnvKeyfactorClientSecret); sOk {
+					b.ClientSecret = clientSecret
+				} else {
+					return fmt.Errorf("client secret is required")
+				}
+			}
 
-	if b.TokenURL == "" {
-		return fmt.Errorf("token URL is required")
+			if b.TokenURL == "" {
+				if tokenUrl, uOk := os.LookupEnv(EnvKeyfactorAuthTokenURL); uOk {
+					b.TokenURL = tokenUrl
+				} else {
+					return fmt.Errorf("token URL is required")
+				}
+			}
+		}
 	}
-
-	//if len(b.Scopes) == 0 {
-	//	return fmt.Errorf("at least one scope is required")
-	//}
 
 	return b.CommandAuthConfig.ValidateAuthConfig()
 }
@@ -232,6 +320,7 @@ func (b *CommandConfigOauth) Authenticate() error {
 		WithClientId(b.ClientID).
 		WithClientSecret(b.ClientSecret).
 		WithTokenUrl(b.TokenURL).
+		WithAccessToken(b.AccessToken).
 		Build()
 
 	if err != nil {
