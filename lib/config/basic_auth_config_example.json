@@ -1,0 +1,18 @@
+{
+  "servers": {
+    "default": {
+      "host": "keyfactor.command.kfdelivery.com",
+      "username": "keyfactor",
+      "password": "password",
+      "domain": "command",
+      "api_path": "KeyfactorAPI"
+    },
+    "server2": {
+      "host": "keyfactor2.command.kfdelivery.com",
+      "username": "keyfactor2",
+      "password": "password2",
+      "domain": "command",
+      "api_path": "Keyfactor/API"
+    }
+  }
+}
