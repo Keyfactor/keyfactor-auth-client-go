@@ -73,6 +73,12 @@ func (a *CommandAuthConfigBasic) WithPassword(password string) *CommandAuthConfi
 	return a
 }
 
+// WithDomain sets the domain for authentication
+func (a *CommandAuthConfigBasic) WithDomain(domain string) *CommandAuthConfigBasic {
+	a.Domain = domain
+	return a
+}
+
 // GetHttpClient returns the http client
 func (a *CommandAuthConfigBasic) GetHttpClient() (*http.Client, error) {
 	//validate the configuration

@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/Keyfactor/keyfactor-auth-client-go/auth_providers"
@@ -112,6 +113,23 @@ func TestCommandAuthConfigBasic_Authenticate(t *testing.T) {
 		Domain:   domain,
 	}
 	authBasicTest(t, "w/ full params variables", false, fullParamsConfig)
+
+	noDomainConfig := &auth_providers.CommandAuthConfigBasic{
+		Username: username,
+		Password: password,
+	}
+	authBasicTest(t, "w/ no domain", false, noDomainConfig)
+
+	// remove domain from username
+	usernameNoDomain := strings.Split(username, "@")[0]
+	t.Logf("Username without domain: %s", usernameNoDomain)
+	usernameNoDomainConfig := &auth_providers.CommandAuthConfigBasic{
+		Username: usernameNoDomain,
+		Password: password,
+	}
+	//TODO: This really SHOULD fail, but it doesn't and the auth header is sent without the domain yet it still authenticates
+	authBasicTest(t, "w/o domain and no domain in username", false, usernameNoDomainConfig)
+
 	t.Log("Resetting environment variables")
 	setBasicEnvVariables(username, password, domain)
 }
