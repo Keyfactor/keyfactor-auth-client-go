@@ -9,6 +9,12 @@ import (
 )
 
 func TestBasicAuthAuthenticator_GetHttpClient(t *testing.T) {
+	// Skip test if TEST_KEYFACTOR_KC_AUTH is set to 1 or true
+	if os.Getenv("TEST_KEYFACTOR_KC_AUTH") == "1" || os.Getenv("TEST_KEYFACTOR_KC_AUTH") == "true" {
+		t.Skip("Skipping TestBasicAuthAuthenticator_GetHttpClient")
+		return
+	}
+
 	auth := &auth_providers.BasicAuthAuthenticator{
 		Client: &http.Client{},
 	}
@@ -24,6 +30,11 @@ func TestBasicAuthAuthenticator_GetHttpClient(t *testing.T) {
 }
 
 func TestCommandAuthConfigBasic_ValidateAuthConfig(t *testing.T) {
+	// Skip test if TEST_KEYFACTOR_KC_AUTH is set to 1 or true
+	if os.Getenv("TEST_KEYFACTOR_KC_AUTH") == "1" || os.Getenv("TEST_KEYFACTOR_KC_AUTH") == "true" {
+		t.Skip("Skipping TestBasicAuthAuthenticator_GetHttpClient")
+		return
+	}
 	config := &auth_providers.CommandAuthConfigBasic{
 		Username: os.Getenv(auth_providers.EnvKeyfactorUsername),
 		Password: os.Getenv(auth_providers.EnvKeyfactorPassword),
@@ -36,6 +47,12 @@ func TestCommandAuthConfigBasic_ValidateAuthConfig(t *testing.T) {
 }
 
 func TestCommandAuthConfigBasic_GetHttpClient(t *testing.T) {
+	// Skip test if TEST_KEYFACTOR_KC_AUTH is set to 1 or true
+	if os.Getenv("TEST_KEYFACTOR_KC_AUTH") == "1" || os.Getenv("TEST_KEYFACTOR_KC_AUTH") == "true" {
+		t.Skip("Skipping TestBasicAuthAuthenticator_GetHttpClient")
+		return
+	}
+
 	config := &auth_providers.CommandAuthConfigBasic{
 		Username: os.Getenv(auth_providers.EnvKeyfactorUsername),
 		Password: os.Getenv(auth_providers.EnvKeyfactorPassword),
@@ -52,6 +69,12 @@ func TestCommandAuthConfigBasic_GetHttpClient(t *testing.T) {
 }
 
 func TestCommandAuthConfigBasic_Authenticate(t *testing.T) {
+	// Skip test if TEST_KEYFACTOR_KC_AUTH is set to 1 or true
+	if os.Getenv("TEST_KEYFACTOR_KC_AUTH") == "1" || os.Getenv("TEST_KEYFACTOR_KC_AUTH") == "true" {
+		t.Skip("Skipping TestBasicAuthAuthenticator_GetHttpClient")
+		return
+	}
+
 	config := &auth_providers.CommandAuthConfigBasic{}
 
 	err := config.Authenticate()
@@ -61,6 +84,11 @@ func TestCommandAuthConfigBasic_Authenticate(t *testing.T) {
 }
 
 func TestCommandAuthConfigBasic_Build(t *testing.T) {
+	// Skip test if TEST_KEYFACTOR_KC_AUTH is set to 1 or true
+	if os.Getenv("TEST_KEYFACTOR_KC_AUTH") == "1" || os.Getenv("TEST_KEYFACTOR_KC_AUTH") == "true" {
+		t.Skip("Skipping TestBasicAuthAuthenticator_GetHttpClient")
+		return
+	}
 	config := &auth_providers.CommandAuthConfigBasic{
 		Username: os.Getenv(auth_providers.EnvKeyfactorUsername),
 		Password: os.Getenv(auth_providers.EnvKeyfactorPassword),

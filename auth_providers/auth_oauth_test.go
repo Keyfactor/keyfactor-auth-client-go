@@ -9,6 +9,11 @@ import (
 )
 
 func TestOAuthAuthenticator_GetHttpClient(t *testing.T) {
+	// Skip test if TEST_KEYFACTOR_AD_AUTH is set to 1 or true
+	if os.Getenv("TEST_KEYFACTOR_AD_AUTH") == "1" || os.Getenv("TEST_KEYFACTOR_AD_AUTH") == "true" {
+		t.Skip("Skipping TestOAuthAuthenticator_GetHttpClient")
+		return
+	}
 	auth := &auth_providers.OAuthAuthenticator{
 		Client: &http.Client{},
 	}
@@ -24,6 +29,11 @@ func TestOAuthAuthenticator_GetHttpClient(t *testing.T) {
 }
 
 func TestCommandConfigOauth_ValidateAuthConfig(t *testing.T) {
+	// Skip test if TEST_KEYFACTOR_AD_AUTH is set to 1 or true
+	if os.Getenv("TEST_KEYFACTOR_AD_AUTH") == "1" || os.Getenv("TEST_KEYFACTOR_AD_AUTH") == "true" {
+		t.Skip("Skipping TestOAuthAuthenticator_GetHttpClient")
+		return
+	}
 	config := &auth_providers.CommandConfigOauth{
 		ClientID:     os.Getenv(auth_providers.EnvKeyfactorClientID),
 		ClientSecret: os.Getenv(auth_providers.EnvKeyfactorClientSecret),
@@ -37,6 +47,11 @@ func TestCommandConfigOauth_ValidateAuthConfig(t *testing.T) {
 }
 
 func TestCommandConfigOauth_GetHttpClient(t *testing.T) {
+	// Skip test if TEST_KEYFACTOR_AD_AUTH is set to 1 or true
+	if os.Getenv("TEST_KEYFACTOR_AD_AUTH") == "1" || os.Getenv("TEST_KEYFACTOR_AD_AUTH") == "true" {
+		t.Skip("Skipping TestOAuthAuthenticator_GetHttpClient")
+		return
+	}
 	config := &auth_providers.CommandConfigOauth{
 		ClientID:     os.Getenv(auth_providers.EnvKeyfactorClientID),
 		ClientSecret: os.Getenv(auth_providers.EnvKeyfactorClientSecret),
@@ -55,6 +70,11 @@ func TestCommandConfigOauth_GetHttpClient(t *testing.T) {
 }
 
 func TestCommandConfigOauth_Authenticate(t *testing.T) {
+	// Skip test if TEST_KEYFACTOR_AD_AUTH is set to 1 or true
+	if os.Getenv("TEST_KEYFACTOR_AD_AUTH") == "1" || os.Getenv("TEST_KEYFACTOR_AD_AUTH") == "true" {
+		t.Skip("Skipping TestOAuthAuthenticator_GetHttpClient")
+		return
+	}
 	config := &auth_providers.CommandConfigOauth{
 		ClientID:     os.Getenv(auth_providers.EnvKeyfactorClientID),
 		ClientSecret: os.Getenv(auth_providers.EnvKeyfactorClientSecret),
@@ -69,6 +89,11 @@ func TestCommandConfigOauth_Authenticate(t *testing.T) {
 }
 
 func TestCommandConfigOauth_Build(t *testing.T) {
+	// Skip test if TEST_KEYFACTOR_AD_AUTH is set to 1 or true
+	if os.Getenv("TEST_KEYFACTOR_AD_AUTH") == "1" || os.Getenv("TEST_KEYFACTOR_AD_AUTH") == "true" {
+		t.Skip("Skipping TestOAuthAuthenticator_GetHttpClient")
+		return
+	}
 	config := &auth_providers.CommandConfigOauth{
 		ClientID:     os.Getenv(auth_providers.EnvKeyfactorClientID),
 		ClientSecret: os.Getenv(auth_providers.EnvKeyfactorClientSecret),
