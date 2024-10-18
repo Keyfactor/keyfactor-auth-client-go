@@ -124,11 +124,21 @@ func (a *CommandAuthConfigBasic) Build() (Authenticator, error) {
 
 // ValidateAuthConfig validates the configuration
 func (a *CommandAuthConfigBasic) ValidateAuthConfig() error {
-	serverConfig, _ := a.CommandAuthConfig.LoadConfig(
+	silentLoad := true
+	if a.CommandAuthConfig.ConfigProfile != "" {
+		silentLoad = false
+	} else if a.CommandAuthConfig.ConfigFilePath != "" {
+		silentLoad = false
+	}
+	serverConfig, cErr := a.CommandAuthConfig.LoadConfig(
 		a.CommandAuthConfig.ConfigProfile,
 		a.CommandAuthConfig.ConfigFilePath,
-		false,
+		silentLoad,
 	)
+	if !silentLoad && cErr != nil {
+		return cErr
+	}
+
 	if a.Username == "" {
 		if username, ok := os.LookupEnv(EnvKeyfactorUsername); ok {
 			a.Username = username
@@ -178,6 +188,7 @@ func (a *CommandAuthConfigBasic) Authenticate() error {
 	authy, err := NewBasicAuthAuthenticatorBuilder().
 		WithUsername(a.Username).
 		WithPassword(a.Password).
+		WithDomain(a.Domain).
 		Build()
 
 	if err != nil {

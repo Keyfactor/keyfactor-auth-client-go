@@ -62,6 +62,29 @@ type Config struct {
 //	return yaml.Unmarshal(data, c)
 //}
 
+func NewConfig() *Config {
+	return &Config{
+		Servers: make(map[string]Server),
+	}
+}
+
+// ReadConfigFromJSON reads a Config configuration from a JSON file.
+func ReadConfigFromJSON(filePath string) (*Config, error) {
+	file, err := os.Open(filePath)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	var config Config
+	decoder := json.NewDecoder(file)
+	if err := decoder.Decode(&config); err != nil {
+		return nil, err
+	}
+
+	return &config, nil
+}
+
 // ReadServerFromJSON reads a Server configuration from a JSON file.
 func ReadServerFromJSON(filePath string) (*Server, error) {
 	file, err := os.Open(filePath)

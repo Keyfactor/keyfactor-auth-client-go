@@ -21,6 +21,7 @@ import (
 	"strings"
 	"testing"
 
+	auth_config "github.com/Keyfactor/keyfactor-auth-client-go/auth_config"
 	"github.com/Keyfactor/keyfactor-auth-client-go/auth_providers"
 )
 
@@ -91,6 +92,35 @@ func TestCommandAuthConfigBasic_Authenticate(t *testing.T) {
 		return
 	}
 
+	userHome, hErr := os.UserHomeDir()
+	if hErr != nil {
+		userHome = os.Getenv("HOME")
+	}
+
+	configFilePath := fmt.Sprintf("%s/%s", userHome, auth_providers.DefaultConfigFilePath)
+	configFromFile, cErr := auth_config.ReadConfigFromJSON(configFilePath)
+	if cErr != nil {
+		t.Errorf("unable to load auth config from file %s: %v", configFilePath, cErr)
+	}
+
+	if configFromFile == nil || configFromFile.Servers == nil {
+		t.Errorf("invalid config file %s", configFilePath)
+		t.FailNow()
+	}
+
+	// Delete the config file
+	t.Logf("Deleting config file: %s", configFilePath)
+	os.Remove(configFilePath)
+	defer func() {
+		// Write the config file back
+		t.Logf("Writing config file: %s", configFilePath)
+		fErr := auth_config.WriteConfigToJSON(configFilePath, configFromFile)
+		if fErr != nil {
+			t.Errorf("unable to write auth config to file %s: %v", configFilePath, fErr)
+		}
+	}()
+
+	t.Log("Testing Basic Auth with Environmental variables")
 	noParamsConfig := &auth_providers.CommandAuthConfigBasic{}
 	authBasicTest(t, "with complete Environmental variables", false, noParamsConfig)
 
@@ -98,15 +128,30 @@ func TestCommandAuthConfigBasic_Authenticate(t *testing.T) {
 	t.Log("Unsetting environment variables")
 	username, password, domain := exportBasicEnvVariables()
 	unsetBasicEnvVariables()
+	defer func() {
+		t.Log("Resetting environment variables")
+		setBasicEnvVariables(username, password, domain)
+	}()
 
+	t.Log("Testing Basic Auth with no Environmental variables")
 	incompleteEnvConfig := &auth_providers.CommandAuthConfigBasic{}
-	authBasicTest(t, "with incomplete Environmental variables", true, incompleteEnvConfig)
+	incompleteEnvConfigExpectedError := "username or environment variable KEYFACTOR_USERNAME is required"
+	authBasicTest(
+		t,
+		"with incomplete Environmental variables",
+		true,
+		incompleteEnvConfig,
+		incompleteEnvConfigExpectedError,
+	)
 
+	t.Log("Testing auth with only username")
 	usernameOnlyConfig := &auth_providers.CommandAuthConfigBasic{
 		Username: "test-username",
 	}
-	authBasicTest(t, "Username Only", true, usernameOnlyConfig)
+	usernameOnlyConfigExceptedError := "password or environment variable KEYFACTOR_PASSWORD is required"
+	authBasicTest(t, "username only", true, usernameOnlyConfig, usernameOnlyConfigExceptedError)
 
+	t.Log("Testing auth with w/ full params variables")
 	fullParamsConfig := &auth_providers.CommandAuthConfigBasic{
 		Username: username,
 		Password: password,
@@ -114,13 +159,23 @@ func TestCommandAuthConfigBasic_Authenticate(t *testing.T) {
 	}
 	authBasicTest(t, "w/ full params variables", false, fullParamsConfig)
 
+	t.Log("Testing auth with w/ full params variables")
+	fullParamsinvalidPassConfig := &auth_providers.CommandAuthConfigBasic{
+		Username: username,
+		Password: "invalid-password",
+		Domain:   domain,
+	}
+	invalidCredsExpectedError := []string{"401", "Unauthorized", "Access is denied due to invalid credentials"}
+	authBasicTest(t, "w/ full params & invalid pass", true, fullParamsinvalidPassConfig, invalidCredsExpectedError...)
+
+	t.Log("Testing auth with w/ no domain")
 	noDomainConfig := &auth_providers.CommandAuthConfigBasic{
 		Username: username,
 		Password: password,
 	}
 	authBasicTest(t, "w/ no domain", false, noDomainConfig)
 
-	// remove domain from username
+	t.Log("Testing auth with w/ no domain and no domain in username")
 	usernameNoDomain := strings.Split(username, "@")[0]
 	t.Logf("Username without domain: %s", usernameNoDomain)
 	usernameNoDomainConfig := &auth_providers.CommandAuthConfigBasic{
@@ -130,8 +185,34 @@ func TestCommandAuthConfigBasic_Authenticate(t *testing.T) {
 	//TODO: This really SHOULD fail, but it doesn't and the auth header is sent without the domain yet it still authenticates
 	authBasicTest(t, "w/o domain and no domain in username", false, usernameNoDomainConfig)
 
-	t.Log("Resetting environment variables")
-	setBasicEnvVariables(username, password, domain)
+	// Write the config file back
+	t.Logf("Writing config file: %s", configFilePath)
+	fErr := auth_config.WriteConfigToJSON(configFilePath, configFromFile)
+	if fErr != nil {
+		t.Errorf("unable to write auth config to file %s: %v", configFilePath, fErr)
+	}
+
+	t.Log("Testing Basic Auth with valid implicit config file")
+	wConfigFile := &auth_providers.CommandAuthConfigBasic{}
+	authBasicTest(t, "with valid implicit config file", false, wConfigFile)
+
+	t.Log("Testing Basic Auth with invalid profile implicit config file")
+	invProfile := &auth_providers.CommandAuthConfigBasic{}
+	invProfile.WithConfigProfile("invalid-profile")
+	expectedError := []string{"profile", "invalid-profile", "not found"}
+	authBasicTest(t, "with invalid profile implicit config file", true, invProfile, expectedError...)
+
+	t.Log("Testing Basic Auth with invalid creds implicit config file")
+	invProfileCreds := &auth_providers.CommandAuthConfigBasic{}
+	invProfileCreds.WithConfigProfile("invalid_username")
+	authBasicTest(t, "with invalid creds implicit config file", true, invProfileCreds, invalidCredsExpectedError...)
+
+	t.Log("Testing Basic Auth with invalid config file path")
+	invFilePath := &auth_providers.CommandAuthConfigBasic{}
+	invFilePath.WithConfigFile("invalid-file-path")
+	invalidPathExpectedError := []string{"no such file or directory", "invalid-file-path"}
+	authBasicTest(t, "with invalid config file PATH", true, invFilePath, invalidPathExpectedError...)
+
 }
 
 func TestCommandAuthConfigBasic_Build(t *testing.T) {
@@ -177,7 +258,10 @@ func unsetBasicEnvVariables() {
 	os.Unsetenv(auth_providers.EnvKeyfactorDomain)
 }
 
-func authBasicTest(t *testing.T, testName string, allowFail bool, config *auth_providers.CommandAuthConfigBasic) {
+func authBasicTest(
+	t *testing.T, testName string, allowFail bool, config *auth_providers.CommandAuthConfigBasic,
+	errorContains ...string,
+) {
 	t.Run(
 		fmt.Sprintf("Basic Auth Test %s", testName), func(t *testing.T) {
 
@@ -187,6 +271,15 @@ func authBasicTest(t *testing.T, testName string, allowFail bool, config *auth_p
 					t.Errorf("Basic auth test '%s' should have failed", testName)
 					t.FailNow()
 					return
+				}
+				if len(errorContains) > 0 {
+					for _, ec := range errorContains {
+						if !strings.Contains(err.Error(), ec) {
+							t.Errorf("Basic auth test '%s' failed with unexpected error %v", testName, err)
+							t.FailNow()
+							return
+						}
+					}
 				}
 				t.Logf("Basic auth test '%s' failed as expected with %v", testName, err)
 				return

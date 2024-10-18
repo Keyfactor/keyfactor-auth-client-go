@@ -37,7 +37,7 @@ const (
 	DefaultAPIVersion     = "1"
 	DefaultAPIClientName  = "APIClient"
 	DefaultProductVersion = "10.5.0.0"
-	DefaultConfigFilePath = "~/.keyfactor/command_config.json"
+	DefaultConfigFilePath = ".keyfactor/command_config.json"
 	DefaultConfigProfile  = "default"
 	DefaultClientTimeout  = 60
 
@@ -176,8 +176,8 @@ func (c *CommandAuthConfig) WithConfigFile(configFilePath string) *CommandAuthCo
 func (c *CommandAuthConfig) WithConfigProfile(profile string) *CommandAuthConfig {
 	if profile == "" {
 		// check if profile is set in environment
-		if profile, ok := os.LookupEnv(EnvKeyfactorAuthProfile); ok {
-			c.ConfigProfile = profile
+		if p, ok := os.LookupEnv(EnvKeyfactorAuthProfile); ok {
+			c.ConfigProfile = p
 		} else {
 			c.ConfigProfile = DefaultConfigProfile
 		}
@@ -521,7 +521,11 @@ func (c *CommandAuthConfig) LoadConfig(profile string, configFilePath string, si
 		if config, ok := os.LookupEnv(EnvKeyfactorConfigFile); ok {
 			configFilePath = config
 		} else {
-			configFilePath = DefaultConfigFilePath
+			homedir, err := os.UserHomeDir()
+			if err != nil {
+				homedir = os.Getenv("HOME")
+			}
+			configFilePath = fmt.Sprintf("%s/%s", homedir, DefaultConfigFilePath)
 		}
 	} else {
 		c.ConfigFilePath = configFilePath
