@@ -1,0 +1,110 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "servers": {
+      "type": "object",
+      "patternProperties": {
+        "^[a-zA-Z0-9_-]+$": {
+          "type": "object",
+          "properties": {
+            "host": {
+              "type": "string"
+            },
+            "auth_hostname": {
+              "type": "string"
+            },
+            "auth_port": {
+              "type": "integer"
+            },
+            "username": {
+              "type": "string"
+            },
+            "password": {
+              "type": "string"
+            },
+            "client_id": {
+              "type": "string"
+            },
+            "client_secret": {
+              "type": "string"
+            },
+            "domain": {
+              "type": "string"
+            },
+            "api_path": {
+              "type": "string"
+            },
+            "auth_provider": {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string"
+                },
+                "profile": {
+                  "type": "string"
+                },
+                "parameters": {
+                  "type": "object",
+                  "properties": {
+                    "secret_name": {
+                      "type": "string"
+                    },
+                    "vault_name": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "secret_name",
+                    "vault_name"
+                  ]
+                }
+              },
+              "required": [
+                "type",
+                "profile",
+                "parameters"
+              ]
+            }
+          },
+          "oneOf": [
+            {
+              "required": ["username", "password"],
+              "not": {
+                "required": ["client_id", "client_secret"]
+              }
+            },
+            {
+              "required": ["client_id", "client_secret"],
+              "not": {
+                "required": ["username", "password"]
+              }
+            }
+          ],
+          "if": {
+            "required": ["auth_provider"]
+          },
+          "then": {
+            "required": ["auth_provider"]
+          },
+          "else": {
+            "if": {
+              "required": ["client_id", "client_secret"]
+            },
+            "then": {
+              "required": ["auth_hostname", "host"]
+            },
+            "else": {
+              "required": ["host"]
+            }
+          }
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "servers"
+  ],
+  "additionalProperties": false
+}
