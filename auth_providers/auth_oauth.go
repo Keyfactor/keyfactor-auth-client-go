@@ -266,12 +266,24 @@ func (b *CommandConfigOauth) LoadConfig(profile, path string, silentLoad bool) (
 }
 
 func (b *CommandConfigOauth) ValidateAuthConfig() error {
-	// silently load the server config
-	_, _ = b.CommandAuthConfig.LoadConfig(
+
+	silentLoad := true
+	if b.CommandAuthConfig.ConfigProfile != "" {
+		silentLoad = false
+	} else if b.CommandAuthConfig.ConfigFilePath != "" {
+		silentLoad = false
+	}
+
+	serverConfig, cErr := b.CommandAuthConfig.LoadConfig(
 		b.CommandAuthConfig.ConfigProfile,
 		b.CommandAuthConfig.ConfigFilePath,
-		true,
+		silentLoad,
 	)
+
+	if !silentLoad && cErr != nil {
+		return cErr
+	}
+
 	if b.AccessToken == "" {
 		// check if access token is set in the environment
 		if accessToken, ok := os.LookupEnv(EnvKeyfactorAccessToken); ok {
@@ -282,7 +294,11 @@ func (b *CommandConfigOauth) ValidateAuthConfig() error {
 				if clientId, idOk := os.LookupEnv(EnvKeyfactorClientID); idOk {
 					b.ClientID = clientId
 				} else {
-					return fmt.Errorf("client ID is required")
+					if serverConfig != nil && serverConfig.ClientID != "" {
+						b.ClientID = serverConfig.ClientID
+					} else {
+						return fmt.Errorf("client ID or environment variable %s is required", EnvKeyfactorClientID)
+					}
 				}
 			}
 
@@ -290,7 +306,14 @@ func (b *CommandConfigOauth) ValidateAuthConfig() error {
 				if clientSecret, sOk := os.LookupEnv(EnvKeyfactorClientSecret); sOk {
 					b.ClientSecret = clientSecret
 				} else {
-					return fmt.Errorf("client secret is required")
+					if serverConfig != nil && serverConfig.ClientSecret != "" {
+						b.ClientSecret = serverConfig.ClientSecret
+					} else {
+						return fmt.Errorf(
+							"client secret or environment variable %s is required",
+							EnvKeyfactorClientSecret,
+						)
+					}
 				}
 			}
 
@@ -298,7 +321,14 @@ func (b *CommandConfigOauth) ValidateAuthConfig() error {
 				if tokenUrl, uOk := os.LookupEnv(EnvKeyfactorAuthTokenURL); uOk {
 					b.TokenURL = tokenUrl
 				} else {
-					return fmt.Errorf("token URL is required")
+					if serverConfig != nil && serverConfig.OAuthTokenUrl != "" {
+						b.TokenURL = serverConfig.OAuthTokenUrl
+					} else {
+						return fmt.Errorf(
+							"token URL or environment variable %s is required",
+							EnvKeyfactorAuthTokenURL,
+						)
+					}
 				}
 			}
 		}

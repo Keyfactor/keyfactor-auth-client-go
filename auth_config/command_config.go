@@ -32,7 +32,7 @@ type Server struct {
 	Domain        string       `json:"domain,omitempty" yaml:"domain,omitempty"`                   // Domain is the domain for authentication.
 	ClientID      string       `json:"client_id,omitempty" yaml:"client_id,omitempty"`             // ClientID is the client ID for OAuth.
 	ClientSecret  string       `json:"client_secret,omitempty" yaml:"client_secret,omitempty"`     // ClientSecret is the client secret for OAuth.
-	OAuthTokenUrl string       `json:"oauth_token_url,omitempty" yaml:"auth_hostname,omitempty"`   // OAuthTokenUrl is full URL for OAuth token request endpoint.
+	OAuthTokenUrl string       `json:"token_url,omitempty" yaml:"token_url,omitempty"`             // OAuthTokenUrl is full URL for OAuth token request endpoint.
 	APIPath       string       `json:"api_path,omitempty" yaml:"api_path,omitempty"`               // APIPath is the API path.
 	AuthProvider  AuthProvider `json:"auth_provider,omitempty" yaml:"auth_provider,omitempty"`     // AuthProvider contains the authentication provider details.
 	SkipTLSVerify bool         `json:"skip_tls_verify,omitempty" yaml:"skip_tls_verify,omitempty"` // TLSVerify determines whether to verify the TLS certificate.

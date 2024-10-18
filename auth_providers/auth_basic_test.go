@@ -124,6 +124,12 @@ func TestCommandAuthConfigBasic_Authenticate(t *testing.T) {
 	noParamsConfig := &auth_providers.CommandAuthConfigBasic{}
 	authBasicTest(t, "with complete Environmental variables", false, noParamsConfig)
 
+	t.Log("Testing Basic Auth with invalid config file path")
+	invFilePath := &auth_providers.CommandAuthConfigBasic{}
+	invFilePath.WithConfigFile("invalid-file-path")
+	invalidPathExpectedError := []string{"no such file or directory", "invalid-file-path"}
+	authBasicTest(t, "with invalid config file PATH", true, invFilePath, invalidPathExpectedError...)
+
 	// Environment variables are not set
 	t.Log("Unsetting environment variables")
 	username, password, domain := exportBasicEnvVariables()
@@ -207,11 +213,20 @@ func TestCommandAuthConfigBasic_Authenticate(t *testing.T) {
 	invProfileCreds.WithConfigProfile("invalid_username")
 	authBasicTest(t, "with invalid creds implicit config file", true, invProfileCreds, invalidCredsExpectedError...)
 
-	t.Log("Testing Basic Auth with invalid config file path")
-	invFilePath := &auth_providers.CommandAuthConfigBasic{}
-	invFilePath.WithConfigFile("invalid-file-path")
-	invalidPathExpectedError := []string{"no such file or directory", "invalid-file-path"}
-	authBasicTest(t, "with invalid config file PATH", true, invFilePath, invalidPathExpectedError...)
+	t.Log("Testing Basic Auth with invalid Command host implicit config file")
+	invHostConfig := &auth_providers.CommandAuthConfigBasic{}
+	invHostConfig.WithConfigProfile("invalid_host")
+	invHostExpectedError := []string{"no such host"}
+	authBasicTest(
+		t, "with invalid Command host implicit config file", true, invHostConfig,
+		invHostExpectedError...,
+	)
+
+	//t.Log("Testing Basic Auth with invalid config file path")
+	//invFilePath := &auth_providers.CommandAuthConfigBasic{}
+	//invFilePath.WithConfigFile("invalid-file-path")
+	//invalidPathExpectedError := []string{"no such file or directory", "invalid-file-path"}
+	//authBasicTest(t, "with invalid config file PATH", true, invFilePath, invalidPathExpectedError...)
 
 }
 
