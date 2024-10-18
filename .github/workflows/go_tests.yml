@@ -22,10 +22,16 @@ jobs:
           go-version: 1.22
 
       - name: Run tests
-        run: go test -v -cover ./auth_providers/...
+        run: |
+          if [ -n "${{ secrets.KEYFACTOR_AUTH_CONFIG_B64 }}" ]; then
+            mkdir -p ~/.keyfactor
+            echo "${{ secrets.KEYFACTOR_AUTH_CONFIG_B64 }}" | base64 --decode > ~/.keyfactor/command_config.json
+          fi
+          go test -v -cover ./auth_providers/...
         env:
           KEYFACTOR_PASSWORD: ${{ secrets.KEYFACTOR_PASSWORD }}
           KEYFACTOR_USERNAME: ${{ secrets.KEYFACTOR_USERNAME }}
+          KEYFACTOR_AUTH_CONFIG_B64: ${{ secrets.KEYFACTOR_AUTH_CONFIG_B64 }}
           KEYFACTOR_AUTH_CLIENT_ID: ${{ secrets.KEYFACTOR_AUTH_CLIENT_ID }}
           KEYFACTOR_AUTH_CLIENT_SECRET: ${{ secrets.KEYFACTOR_AUTH_CLIENT_SECRET }}
           KEYFACTOR_HOSTNAME: ${{ vars.KEYFACTOR_HOSTNAME }}

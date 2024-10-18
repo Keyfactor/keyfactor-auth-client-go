@@ -6,6 +6,7 @@ module "keyfactor_github_test_environment_ad_10_5_0" {
   keyfactor_hostname  = var.keyfactor_hostname_10_5_0
   keyfactor_username  = var.keyfactor_username_10_5_0
   keyfactor_password  = var.keyfactor_password_10_5_0
+  keyfactor_config_file = base64encode(file("${path.module}/command_config.json"))
 }
 
 # module "keyfactor_github_test_environment_11_5_0_kc" {
@@ -30,4 +31,5 @@ module "keyfactor_github_test_environment_12_3_0_kc" {
   keyfactor_client_id       = var.keyfactor_client_id_12_3_0
   keyfactor_client_secret   = var.keyfactor_client_secret_12_3_0
   keyfactor_tls_skip_verify = true
+  keyfactor_config_file = base64encode(file("${path.module}/command_config.json"))
 }
