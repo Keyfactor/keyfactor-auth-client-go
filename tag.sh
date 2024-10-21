@@ -1,4 +1,4 @@
-RC_VERSION=rc.8
+RC_VERSION=rc.9
 TAG_VERSION_1=v0.0.1-$RC_VERSION
 git tag -d $TAG_VERSION_1 || true
 git tag $TAG_VERSION_1

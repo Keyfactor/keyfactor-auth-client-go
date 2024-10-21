@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package authconfig_test
+package auth_config_test
 
 import (
 	"encoding/json"
@@ -20,8 +20,6 @@ import (
 	"testing"
 
 	"gopkg.in/yaml.v2"
-
-	"github.com/Keyfactor/keyfactor-auth-client-go/auth_config"
 )
 
 func TestReadServerFromJSON(t *testing.T) {

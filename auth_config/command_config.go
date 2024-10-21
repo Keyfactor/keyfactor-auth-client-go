@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package authconfig
+package auth_config
 
 import (
 	"encoding/json"
@@ -36,8 +36,9 @@ type Server struct {
 	APIPath       string       `json:"api_path,omitempty" yaml:"api_path,omitempty"`               // APIPath is the API path.
 	AuthProvider  AuthProvider `json:"auth_provider,omitempty" yaml:"auth_provider,omitempty"`     // AuthProvider contains the authentication provider details.
 	SkipTLSVerify bool         `json:"skip_tls_verify,omitempty" yaml:"skip_tls_verify,omitempty"` // TLSVerify determines whether to verify the TLS certificate.
-	CACertPath    string       `json:"ca_cert_path,omitempty" yaml:"ca_cert_path,
-omitempty"` // CACertPath is the path to the CA certificate to trust.
+	CACertPath    string       `json:"ca_cert_path,omitempty" yaml:"ca_cert_path,omitempty"`       // CACertPath is the path to the CA certificate to trust.
+	AuthType      string       `json:"auth_type,omitempty" yaml:"auth_type, omitempty"`            // AuthType is the type of authentication to use.
+
 }
 
 // AuthProvider represents the authentication provider configuration.
@@ -207,4 +208,15 @@ func MergeConfigFromFile(filePath string, config *Config) error {
 	}
 
 	return nil
+}
+
+func (s *Server) GetAuthType() string {
+	if s.ClientID != "" && s.ClientSecret != "" {
+		s.AuthType = "oauth"
+	} else if s.Username != "" && s.Password != "" {
+		s.AuthType = "basic"
+	} else {
+		s.AuthType = ""
+	}
+	return s.AuthType
 }
