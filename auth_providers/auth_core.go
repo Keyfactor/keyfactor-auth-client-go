@@ -621,3 +621,22 @@ func expandPath(path string) (string, error) {
 	}
 	return path, nil
 }
+
+func (c *CommandAuthConfig) GetServerConfig() *authconfig.Server {
+	server := authconfig.Server{
+		Host:          c.CommandHostName,
+		Port:          c.CommandPort,
+		Username:      "",
+		Password:      "",
+		Domain:        "",
+		ClientID:      "",
+		ClientSecret:  "",
+		OAuthTokenUrl: "",
+		APIPath:       c.CommandAPIPath,
+		AuthProvider:  authconfig.AuthProvider{},
+		SkipTLSVerify: c.SkipVerify,
+		CACertPath:    c.CommandCACert,
+		AuthType:      "",
+	}
+	return &server
+}
