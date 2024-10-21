@@ -106,6 +106,9 @@ type CommandAuthConfig struct {
 	// UserAgent is the user agent to be used for authentication to Keyfactor Command API
 	UserAgent string `json:"user_agent,omitempty"`
 
+	// Debug
+	Debug bool `json:"debug,omitempty"`
+
 	// HttpClient is the http Client to be used for authentication to Keyfactor Command API
 	HttpClient *http.Client
 }
