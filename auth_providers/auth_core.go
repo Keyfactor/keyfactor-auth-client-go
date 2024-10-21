@@ -103,6 +103,9 @@ type CommandAuthConfig struct {
 	// HttpClientTimeout is the timeout for the http Client
 	HttpClientTimeout int `json:"client_timeout"`
 
+	// UserAgent is the user agent to be used for authentication to Keyfactor Command API
+	UserAgent string `json:"user_agent,omitempty"`
+
 	// HttpClient is the http Client to be used for authentication to Keyfactor Command API
 	HttpClient *http.Client
 }
