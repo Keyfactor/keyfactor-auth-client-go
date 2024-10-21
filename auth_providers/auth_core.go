@@ -83,13 +83,13 @@ type CommandAuthConfig struct {
 	AuthHeader string `json:"auth_header"`
 
 	// CommandHostName is the hostname of the Keyfactor Command API
-	CommandHostName string `json:"command_host_name"`
+	CommandHostName string `json:"host"`
 
 	// CommandPort is the port of the Keyfactor Command API
-	CommandPort int `json:"command_port"`
+	CommandPort int `json:"port"`
 
 	// CommandAPIPath is the path of the Keyfactor Command API, default is "KeyfactorAPI"
-	CommandAPIPath string `json:"command_api_path"`
+	CommandAPIPath string `json:"api_path"`
 
 	// CommandAPIVersion is the version of the Keyfactor Command API, default is "1"
 	CommandVersion string `json:"command_version"`

@@ -20,6 +20,8 @@ import (
 	"net/http"
 	"os"
 	"strings"
+
+	"github.com/Keyfactor/keyfactor-auth-client-go/auth_config"
 )
 
 const (
@@ -227,4 +229,24 @@ func (a *CommandAuthConfigBasic) parseUsernameDomain() error {
 	}
 
 	return nil
+}
+
+// GetServerConfig returns the server configuration
+func (a *CommandAuthConfigBasic) GetServerConfig() *auth_config.Server {
+	server := auth_config.Server{
+		Host:          a.CommandHostName,
+		Port:          a.CommandPort,
+		Username:      a.Username,
+		Password:      a.Password,
+		Domain:        a.Domain,
+		ClientID:      "",
+		ClientSecret:  "",
+		OAuthTokenUrl: "",
+		APIPath:       a.CommandAPIPath,
+		//AuthProvider:  auth_config.AuthProvider{},
+		SkipTLSVerify: a.SkipVerify,
+		CACertPath:    a.CommandCACert,
+		AuthType:      "basic",
+	}
+	return &server
 }

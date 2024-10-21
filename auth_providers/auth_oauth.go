@@ -372,3 +372,19 @@ func (b *CommandConfigOauth) Authenticate() error {
 
 	return nil
 }
+
+func (b *CommandConfigOauth) GetServerConfig() *authconfig.Server {
+	server := authconfig.Server{
+		Host:          b.CommandHostName,
+		Port:          b.CommandPort,
+		ClientID:      b.ClientID,
+		ClientSecret:  b.ClientSecret,
+		OAuthTokenUrl: b.TokenURL,
+		APIPath:       b.CommandAPIPath,
+		//AuthProvider:  authconfig.AuthProvider{},
+		SkipTLSVerify: b.SkipVerify,
+		CACertPath:    b.CommandCACert,
+		AuthType:      "oauth",
+	}
+	return &server
+}
