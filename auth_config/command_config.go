@@ -20,6 +20,8 @@ import (
 	"os"
 
 	"gopkg.in/yaml.v2"
+
+	"github.com/Keyfactor/keyfactor-auth-client-go/auth_providers"
 )
 
 // Server represents the server configuration for authentication.
@@ -53,16 +55,6 @@ type Config struct {
 	Servers map[string]Server `json:"servers,omitempty" yaml:"servers,omitempty"` // Servers is a map of server configurations.
 }
 
-// UnmarshalJSON unmarshals the JSON data into the Config struct.
-//func (c *Config) UnmarshalJSON(data []byte) error {
-//	return json.Unmarshal(data, c)
-//}
-
-// UnmarshalYAML unmarshals the YAML data into the Config struct.
-//func (c *Config) UnmarshalYAML(data []byte) error {
-//	return yaml.Unmarshal(data, c)
-//}
-
 func NewConfig() *Config {
 	return &Config{
 		Servers: make(map[string]Server),
@@ -80,6 +72,21 @@ func ReadConfigFromJSON(filePath string) (*Config, error) {
 	var config Config
 	decoder := json.NewDecoder(file)
 	if err := decoder.Decode(&config); err != nil {
+		return nil, err
+	}
+
+	return &config, nil
+}
+
+// ReadConfigFromYAML reads a Config configuration from a YAML file.
+func ReadConfigFromYAML(filePath string) (*Config, error) {
+	file, err := os.ReadFile(filePath)
+	if err != nil {
+		return nil, err
+	}
+
+	var config Config
+	if err := yaml.Unmarshal(file, &config); err != nil {
 		return nil, err
 	}
 
@@ -219,4 +226,65 @@ func (s *Server) GetAuthType() string {
 		s.AuthType = ""
 	}
 	return s.AuthType
+}
+
+// GetBasicAuthClientConfig returns the basic auth configuration for the client.
+func (s *Server) GetBasicAuthClientConfig() (*auth_providers.CommandAuthConfigBasic, error) {
+	configType := s.GetAuthType()
+	if configType != "basic" {
+		return nil, fmt.Errorf("invalid auth type: %s", configType)
+	}
+
+	baseConfig := auth_providers.CommandAuthConfig{}
+	baseConfig.
+		WithCommandHostName(s.Host).
+		WithCommandPort(s.Port).
+		WithCommandAPIPath(s.APIPath).
+		WithCommandCACert(s.CACertPath).
+		WithSkipVerify(s.SkipTLSVerify)
+
+	basicConfig := auth_providers.CommandAuthConfigBasic{
+		CommandAuthConfig: baseConfig,
+	}
+	basicConfig.
+		WithUsername(s.Username).
+		WithPassword(s.Password).
+		WithDomain(s.Domain).
+		Build()
+
+	vErr := basicConfig.ValidateAuthConfig()
+	if vErr != nil {
+		return nil, vErr
+	}
+	return &basicConfig, nil
+}
+
+// GetOAuthClientConfig returns the OAuth configuration for the client.
+func (s *Server) GetOAuthClientConfig() (*auth_providers.CommandConfigOauth, error) {
+	configType := s.GetAuthType()
+	if configType != "oauth" {
+		return nil, fmt.Errorf("invalid auth type: %s", configType)
+	}
+	baseConfig := auth_providers.CommandAuthConfig{}
+	baseConfig.
+		WithCommandHostName(s.Host).
+		WithCommandPort(s.Port).
+		WithCommandAPIPath(s.APIPath).
+		WithCommandCACert(s.CACertPath).
+		WithSkipVerify(s.SkipTLSVerify)
+
+	oauthConfig := auth_providers.CommandConfigOauth{
+		CommandAuthConfig: baseConfig,
+	}
+	oauthConfig.
+		WithClientId(s.ClientID).
+		WithClientSecret(s.ClientSecret).
+		WithTokenUrl(s.OAuthTokenUrl).
+		Build()
+
+	vErr := oauthConfig.ValidateAuthConfig()
+	if vErr != nil {
+		return nil, vErr
+	}
+	return &oauthConfig, nil
 }
