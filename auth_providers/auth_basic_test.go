@@ -21,7 +21,6 @@ import (
 	"strings"
 	"testing"
 
-	auth_config "github.com/Keyfactor/keyfactor-auth-client-go/auth_config"
 	"github.com/Keyfactor/keyfactor-auth-client-go/auth_providers"
 )
 
@@ -98,7 +97,7 @@ func TestCommandAuthConfigBasic_Authenticate(t *testing.T) {
 	}
 
 	configFilePath := fmt.Sprintf("%s/%s", userHome, auth_providers.DefaultConfigFilePath)
-	configFromFile, cErr := auth_config.ReadConfigFromJSON(configFilePath)
+	configFromFile, cErr := auth_providers.ReadConfigFromJSON(configFilePath)
 	if cErr != nil {
 		t.Errorf("unable to load auth config from file %s: %v", configFilePath, cErr)
 	}
@@ -114,7 +113,7 @@ func TestCommandAuthConfigBasic_Authenticate(t *testing.T) {
 	defer func() {
 		// Write the config file back
 		t.Logf("Writing config file: %s", configFilePath)
-		fErr := auth_config.WriteConfigToJSON(configFilePath, configFromFile)
+		fErr := auth_providers.WriteConfigToJSON(configFilePath, configFromFile)
 		if fErr != nil {
 			t.Errorf("unable to write auth config to file %s: %v", configFilePath, fErr)
 		}
@@ -193,7 +192,7 @@ func TestCommandAuthConfigBasic_Authenticate(t *testing.T) {
 
 	// Write the config file back
 	t.Logf("Writing config file: %s", configFilePath)
-	fErr := auth_config.WriteConfigToJSON(configFilePath, configFromFile)
+	fErr := auth_providers.WriteConfigToJSON(configFilePath, configFromFile)
 	if fErr != nil {
 		t.Errorf("unable to write auth config to file %s: %v", configFilePath, fErr)
 	}
