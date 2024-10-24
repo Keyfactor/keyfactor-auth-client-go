@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package auth_config
+package auth_providers
 
 import (
 	"encoding/json"
@@ -20,8 +20,6 @@ import (
 	"os"
 
 	"gopkg.in/yaml.v2"
-
-	"github.com/Keyfactor/keyfactor-auth-client-go/auth_providers"
 )
 
 // Server represents the server configuration for authentication.
@@ -229,13 +227,13 @@ func (s *Server) GetAuthType() string {
 }
 
 // GetBasicAuthClientConfig returns the basic auth configuration for the client.
-func (s *Server) GetBasicAuthClientConfig() (*auth_providers.CommandAuthConfigBasic, error) {
+func (s *Server) GetBasicAuthClientConfig() (*CommandAuthConfigBasic, error) {
 	configType := s.GetAuthType()
 	if configType != "basic" {
 		return nil, fmt.Errorf("invalid auth type: %s", configType)
 	}
 
-	baseConfig := auth_providers.CommandAuthConfig{}
+	baseConfig := CommandAuthConfig{}
 	baseConfig.
 		WithCommandHostName(s.Host).
 		WithCommandPort(s.Port).
@@ -243,7 +241,7 @@ func (s *Server) GetBasicAuthClientConfig() (*auth_providers.CommandAuthConfigBa
 		WithCommandCACert(s.CACertPath).
 		WithSkipVerify(s.SkipTLSVerify)
 
-	basicConfig := auth_providers.CommandAuthConfigBasic{
+	basicConfig := CommandAuthConfigBasic{
 		CommandAuthConfig: baseConfig,
 	}
 	basicConfig.
@@ -260,12 +258,12 @@ func (s *Server) GetBasicAuthClientConfig() (*auth_providers.CommandAuthConfigBa
 }
 
 // GetOAuthClientConfig returns the OAuth configuration for the client.
-func (s *Server) GetOAuthClientConfig() (*auth_providers.CommandConfigOauth, error) {
+func (s *Server) GetOAuthClientConfig() (*CommandConfigOauth, error) {
 	configType := s.GetAuthType()
 	if configType != "oauth" {
 		return nil, fmt.Errorf("invalid auth type: %s", configType)
 	}
-	baseConfig := auth_providers.CommandAuthConfig{}
+	baseConfig := CommandAuthConfig{}
 	baseConfig.
 		WithCommandHostName(s.Host).
 		WithCommandPort(s.Port).
@@ -273,7 +271,7 @@ func (s *Server) GetOAuthClientConfig() (*auth_providers.CommandConfigOauth, err
 		WithCommandCACert(s.CACertPath).
 		WithSkipVerify(s.SkipTLSVerify)
 
-	oauthConfig := auth_providers.CommandConfigOauth{
+	oauthConfig := CommandConfigOauth{
 		CommandAuthConfig: baseConfig,
 	}
 	oauthConfig.

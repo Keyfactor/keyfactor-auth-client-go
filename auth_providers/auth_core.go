@@ -27,8 +27,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-
-	authconfig "github.com/Keyfactor/keyfactor-auth-client-go/auth_config"
 )
 
 const (
@@ -77,7 +75,7 @@ type CommandAuthConfig struct {
 	ConfigFilePath string
 
 	// FileConfig
-	FileConfig *authconfig.Server
+	FileConfig *Server
 
 	// AuthHeader is the header to be used for authentication to Keyfactor Command API
 	AuthHeader string `json:"auth_header"`
@@ -519,7 +517,7 @@ func DecodePEMBytes(buf []byte) ([]*pem.Block, []byte, error) {
 
 // LoadConfig loads the configuration file and returns the server configuration.
 func (c *CommandAuthConfig) LoadConfig(profile string, configFilePath string, silentLoad bool) (
-	*authconfig.Server,
+	*Server,
 	error,
 ) {
 	if configFilePath == "" {
@@ -555,7 +553,7 @@ func (c *CommandAuthConfig) LoadConfig(profile string, configFilePath string, si
 	}
 	defer file.Close()
 
-	var config authconfig.Config
+	var config Config
 	decoder := json.NewDecoder(file)
 	if jErr := decoder.Decode(&config); jErr != nil {
 		if !silentLoad {
@@ -622,8 +620,8 @@ func expandPath(path string) (string, error) {
 	return path, nil
 }
 
-func (c *CommandAuthConfig) GetServerConfig() *authconfig.Server {
-	server := authconfig.Server{
+func (c *CommandAuthConfig) GetServerConfig() *Server {
+	server := Server{
 		Host:          c.CommandHostName,
 		Port:          c.CommandPort,
 		Username:      "",
@@ -633,7 +631,7 @@ func (c *CommandAuthConfig) GetServerConfig() *authconfig.Server {
 		ClientSecret:  "",
 		OAuthTokenUrl: "",
 		APIPath:       c.CommandAPIPath,
-		AuthProvider:  authconfig.AuthProvider{},
+		AuthProvider:  AuthProvider{},
 		SkipTLSVerify: c.SkipVerify,
 		CACertPath:    c.CommandCACert,
 		AuthType:      "",

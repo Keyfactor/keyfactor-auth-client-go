@@ -12,19 +12,20 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package auth_config_test
+package auth_providers_test
 
 import (
 	"encoding/json"
 	"os"
 	"testing"
 
+	"github.com/Keyfactor/keyfactor-auth-client-go/auth_providers"
 	"gopkg.in/yaml.v2"
 )
 
 func TestReadServerFromJSON(t *testing.T) {
 	filePath := "test_config.json"
-	server := &authconfig.Server{
+	server := &auth_providers.Server{
 		Host:          "localhost",
 		Port:          8080,
 		OAuthTokenUrl: "https://auth.localhost:8443/openid/token",
@@ -36,13 +37,13 @@ func TestReadServerFromJSON(t *testing.T) {
 		APIPath:       "api",
 	}
 
-	err := authconfig.WriteServerToJSON(filePath, server)
+	err := auth_providers.WriteServerToJSON(filePath, server)
 	if err != nil {
 		t.Fatalf("failed to write server to JSON: %v", err)
 	}
 	defer os.Remove(filePath)
 
-	readServer, err := authconfig.ReadServerFromJSON(filePath)
+	readServer, err := auth_providers.ReadServerFromJSON(filePath)
 	if err != nil {
 		t.Fatalf("failed to read server from JSON: %v", err)
 	}
@@ -54,7 +55,7 @@ func TestReadServerFromJSON(t *testing.T) {
 
 func TestWriteServerToJSON(t *testing.T) {
 	filePath := "test_server.json"
-	server := &authconfig.Server{
+	server := &auth_providers.Server{
 		Host:          "localhost",
 		Port:          8080,
 		OAuthTokenUrl: "https://auth.localhost:8443/openid/token",
@@ -66,7 +67,7 @@ func TestWriteServerToJSON(t *testing.T) {
 		APIPath:       "api",
 	}
 
-	err := authconfig.WriteServerToJSON(filePath, server)
+	err := auth_providers.WriteServerToJSON(filePath, server)
 	if err != nil {
 		t.Fatalf("failed to write server to JSON: %v", err)
 	}
@@ -77,7 +78,7 @@ func TestWriteServerToJSON(t *testing.T) {
 		t.Fatalf("failed to read file: %v", err)
 	}
 
-	var readServer authconfig.Server
+	var readServer auth_providers.Server
 	err = json.Unmarshal(file, &readServer)
 	if err != nil {
 		t.Fatalf("failed to unmarshal JSON: %v", err)
@@ -90,7 +91,7 @@ func TestWriteServerToJSON(t *testing.T) {
 
 func TestReadServerFromYAML(t *testing.T) {
 	filePath := "test_server.yaml"
-	server := &authconfig.Server{
+	server := &auth_providers.Server{
 		Host:          "localhost",
 		Port:          8080,
 		OAuthTokenUrl: "https://auth.localhost:8443/openid/token",
@@ -102,13 +103,13 @@ func TestReadServerFromYAML(t *testing.T) {
 		APIPath:       "api",
 	}
 
-	err := authconfig.WriteServerToYAML(filePath, server)
+	err := auth_providers.WriteServerToYAML(filePath, server)
 	if err != nil {
 		t.Fatalf("failed to write server to YAML: %v", err)
 	}
 	defer os.Remove(filePath)
 
-	readServer, err := authconfig.ReadServerFromYAML(filePath)
+	readServer, err := auth_providers.ReadServerFromYAML(filePath)
 	if err != nil {
 		t.Fatalf("failed to read server from YAML: %v", err)
 	}
@@ -120,7 +121,7 @@ func TestReadServerFromYAML(t *testing.T) {
 
 func TestWriteServerToYAML(t *testing.T) {
 	filePath := "test_server.yaml"
-	server := &authconfig.Server{
+	server := &auth_providers.Server{
 		Host:          "localhost",
 		Port:          8080,
 		OAuthTokenUrl: "https://auth.localhost:8443/openid/token",
@@ -132,7 +133,7 @@ func TestWriteServerToYAML(t *testing.T) {
 		APIPath:       "api",
 	}
 
-	err := authconfig.WriteServerToYAML(filePath, server)
+	err := auth_providers.WriteServerToYAML(filePath, server)
 	if err != nil {
 		t.Fatalf("failed to write server to YAML: %v", err)
 	}
@@ -143,7 +144,7 @@ func TestWriteServerToYAML(t *testing.T) {
 		t.Fatalf("failed to read file: %v", err)
 	}
 
-	var readServer authconfig.Server
+	var readServer auth_providers.Server
 	err = yaml.Unmarshal(file, &readServer)
 	if err != nil {
 		t.Fatalf("failed to unmarshal YAML: %v", err)
@@ -156,8 +157,8 @@ func TestWriteServerToYAML(t *testing.T) {
 
 func TestMergeConfigFromFile(t *testing.T) {
 	filePath := "test_config.json"
-	config := &authconfig.Config{
-		Servers: map[string]authconfig.Server{
+	config := &auth_providers.Config{
+		Servers: map[string]auth_providers.Server{
 			"server1": {
 				Host: "localhost",
 				Port: 8080,
@@ -165,14 +166,14 @@ func TestMergeConfigFromFile(t *testing.T) {
 		},
 	}
 
-	err := authconfig.WriteConfigToJSON(filePath, config)
+	err := auth_providers.WriteConfigToJSON(filePath, config)
 	if err != nil {
 		t.Fatalf("failed to write config to JSON: %v", err)
 	}
 	defer os.Remove(filePath)
 
-	newConfig := &authconfig.Config{
-		Servers: map[string]authconfig.Server{
+	newConfig := &auth_providers.Config{
+		Servers: map[string]auth_providers.Server{
 			"server2": {
 				Host: "remotehost",
 				Port: 9090,
@@ -180,7 +181,7 @@ func TestMergeConfigFromFile(t *testing.T) {
 		},
 	}
 
-	err = authconfig.MergeConfigFromFile(filePath, newConfig)
+	err = auth_providers.MergeConfigFromFile(filePath, newConfig)
 	if err != nil {
 		t.Fatalf("failed to merge config from file: %v", err)
 	}
@@ -200,8 +201,8 @@ func TestMergeConfigFromFile(t *testing.T) {
 
 func TestReadFullAuthConfigExample(t *testing.T) {
 	filePath := "../lib/config/full_auth_config_example.json"
-	expectedConfig := &authconfig.Config{
-		Servers: map[string]authconfig.Server{
+	expectedConfig := &auth_providers.Config{
+		Servers: map[string]auth_providers.Server{
 			"default": {
 				Host:          "keyfactor.command.kfdelivery.com",
 				OAuthTokenUrl: "idp.keyfactor.command.kfdelivery.com",
@@ -211,7 +212,7 @@ func TestReadFullAuthConfigExample(t *testing.T) {
 				ClientSecret:  "client-secret",
 				Domain:        "command",
 				APIPath:       "KeyfactorAPI",
-				AuthProvider: authconfig.AuthProvider{
+				AuthProvider: auth_providers.AuthProvider{
 					Type:    "azid",
 					Profile: "azure",
 					Parameters: map[string]interface{}{
@@ -229,7 +230,7 @@ func TestReadFullAuthConfigExample(t *testing.T) {
 				ClientSecret:  "client-secret2",
 				Domain:        "command",
 				APIPath:       "KeyfactorAPI",
-				AuthProvider: authconfig.AuthProvider{
+				AuthProvider: auth_providers.AuthProvider{
 					Type:    "azid",
 					Profile: "azure",
 					Parameters: map[string]interface{}{
@@ -246,7 +247,7 @@ func TestReadFullAuthConfigExample(t *testing.T) {
 		t.Fatalf("failed to read file: %v", err)
 	}
 
-	var config authconfig.Config
+	var config auth_providers.Config
 	err = json.Unmarshal(file, &config)
 	if err != nil {
 		t.Fatalf("failed to unmarshal JSON: %v", err)
@@ -259,8 +260,8 @@ func TestReadFullAuthConfigExample(t *testing.T) {
 
 func TestReadOAuthConfigExample(t *testing.T) {
 	filePath := "../lib/config/oauth_config_example.json"
-	expectedConfig := &authconfig.Config{
-		Servers: map[string]authconfig.Server{
+	expectedConfig := &auth_providers.Config{
+		Servers: map[string]auth_providers.Server{
 			"default": {
 				Host:          "keyfactor.command.kfdelivery.com",
 				OAuthTokenUrl: "https://idp.keyfactor.command.kfdelivery.com/oauth2/token",
@@ -283,7 +284,7 @@ func TestReadOAuthConfigExample(t *testing.T) {
 		t.Fatalf("failed to read file: %v", err)
 	}
 
-	var config authconfig.Config
+	var config auth_providers.Config
 	err = json.Unmarshal(file, &config)
 	if err != nil {
 		t.Fatalf("failed to unmarshal JSON: %v", err)
@@ -296,8 +297,8 @@ func TestReadOAuthConfigExample(t *testing.T) {
 
 func TestReadBasicAuthConfigExample(t *testing.T) {
 	filePath := "../lib/config/basic_auth_config_example.json"
-	expectedConfig := &authconfig.Config{
-		Servers: map[string]authconfig.Server{
+	expectedConfig := &auth_providers.Config{
+		Servers: map[string]auth_providers.Server{
 			"default": {
 				Host:     "keyfactor.command.kfdelivery.com",
 				Username: "keyfactor",
@@ -320,7 +321,7 @@ func TestReadBasicAuthConfigExample(t *testing.T) {
 		t.Fatalf("failed to read file: %v", err)
 	}
 
-	var config authconfig.Config
+	var config auth_providers.Config
 	err = json.Unmarshal(file, &config)
 	if err != nil {
 		t.Fatalf("failed to unmarshal JSON: %v", err)
@@ -331,7 +332,7 @@ func TestReadBasicAuthConfigExample(t *testing.T) {
 	}
 }
 
-func compareConfigs(a, b *authconfig.Config) bool {
+func compareConfigs(a, b *auth_providers.Config) bool {
 	if len(a.Servers) != len(b.Servers) {
 		return false
 	}
@@ -344,7 +345,7 @@ func compareConfigs(a, b *authconfig.Config) bool {
 	return true
 }
 
-func compareServers(a, b *authconfig.Server) bool {
+func compareServers(a, b *auth_providers.Server) bool {
 	return a.Host == b.Host &&
 		a.Port == b.Port &&
 		a.OAuthTokenUrl == b.OAuthTokenUrl &&

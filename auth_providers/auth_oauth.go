@@ -8,7 +8,6 @@ import (
 	"os"
 	"time"
 
-	authconfig "github.com/Keyfactor/keyfactor-auth-client-go/auth_config"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/clientcredentials"
 )
@@ -216,7 +215,7 @@ func (b *CommandConfigOauth) Build() (Authenticator, error) {
 	return &OAuthAuthenticator{Client: client}, nil
 }
 
-func (b *CommandConfigOauth) LoadConfig(profile, path string, silentLoad bool) (*authconfig.Server, error) {
+func (b *CommandConfigOauth) LoadConfig(profile, path string, silentLoad bool) (*Server, error) {
 	serverConfig, sErr := b.CommandAuthConfig.LoadConfig(profile, path, silentLoad)
 	if sErr != nil {
 		if !silentLoad {
@@ -373,15 +372,15 @@ func (b *CommandConfigOauth) Authenticate() error {
 	return nil
 }
 
-func (b *CommandConfigOauth) GetServerConfig() *authconfig.Server {
-	server := authconfig.Server{
+func (b *CommandConfigOauth) GetServerConfig() *Server {
+	server := Server{
 		Host:          b.CommandHostName,
 		Port:          b.CommandPort,
 		ClientID:      b.ClientID,
 		ClientSecret:  b.ClientSecret,
 		OAuthTokenUrl: b.TokenURL,
 		APIPath:       b.CommandAPIPath,
-		//AuthProvider:  authconfig.AuthProvider{},
+		//AuthProvider:  AuthProvider{},
 		SkipTLSVerify: b.SkipVerify,
 		CACertPath:    b.CommandCACert,
 		AuthType:      "oauth",
