@@ -90,7 +90,12 @@ func (a *CommandAuthConfigBasic) GetHttpClient() (*http.Client, error) {
 	}
 
 	// Encode the username and password in Base64
-	auth := a.Username + ":" + a.Password
+	var auth string
+	if a.Domain != "" {
+		auth = a.Domain + "\\" + a.Username + ":" + a.Password
+	} else {
+		auth = a.Username + ":" + a.Password
+	}
 	encodedAuth := base64.StdEncoding.EncodeToString([]byte(auth))
 
 	// Create a custom RoundTripper
