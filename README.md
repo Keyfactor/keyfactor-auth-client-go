@@ -8,6 +8,12 @@ Client library for authenticating to Keyfactor Command
     * [Global](#global)
     * [Basic Auth](#basic-auth)
     * [oAuth Client Credentials](#oauth-client-credentials)
+- [Configuration File](#configuration-file)
+    * [Basic Auth](#basic-auth)
+    * [oAuth Client Credentials](#oauth-client-credentials)
+    * [Auth Providers](#auth-providers)
+        + [Azure Id](#azure-id)
+        + [Azure KeyVault](#azure-keyvault)
 - [Test Environment Variables](#test-environment-variables)
 
 <!-- tocstop -->
@@ -48,7 +54,7 @@ Currently, only Active Directory `Basic` authentication is supported.
 | KEYFACTOR_AUTH_ACCESS_TOKEN  | Access token to use to authenticate to Keyfactor Command API. This can be supplied directly or generated via client credentials |          |
 | KEYFACTOR_AUTH_CA_CERT       | Either a file path or PEM encoded string to a CA certificate to use when connecting to Keyfactor Auth                           |          |
 
-## Test Environment Variables
+### Test Environment Variables
 
 These environment variables are used to run go tests. They are not used in the actual client library.
 
@@ -56,3 +62,91 @@ These environment variables are used to run go tests. They are not used in the a
 |------------------------|-------------------------------------------------------|---------|
 | TEST_KEYFACTOR_AD_AUTH | Set to `true` to test Active Directory authentication | false   |
 | TEST_KEYFACTOR_KC_AUTH | Set to `true` to test Keycloak authentication         | false   |
+
+## Configuration File
+A JSON or YAML file can be used to store authentication configuration. A configuration file can contain references to 
+multiple Keyfactor Command environments and can be referenced by a `profile` name. The `default` profile will be used 
+when no profile is specified. Keyfactor tools will look for a config file located at `$HOME/.keyfactor/command_config.json`
+by default. The config file should be structured as follows:
+
+### Basic Auth
+
+#### JSON
+```json
+{
+  "servers": {
+    "default": {
+      "host": "keyfactor.command.kfdelivery.com",
+      "username": "keyfactor",
+      "password": "password",
+      "domain": "command",
+      "api_path": "KeyfactorAPI"
+    },
+    "server2": {
+      "host": "keyfactor2.command.kfdelivery.com",
+      "username": "keyfactor2",
+      "password": "password2",
+      "domain": "command",
+      "api_path": "Keyfactor/API"
+    }
+  }
+}
+```
+
+#### YAML
+```yaml
+servers:
+  default:
+    host: keyfactor.command.kfdelivery.com
+    username: keyfactor
+    password: password
+    domain: command
+    api_path: KeyfactorAPI
+  server2:
+    host: keyfactor2.command.kfdelivery.com
+    username: keyfactor2
+    password: password2
+    domain: command
+    api_path: Keyfactor/API
+```
+
+### oAuth Client Credentials
+
+#### JSON
+```json
+{
+  "servers": {
+    "default": {
+      "host": "keyfactor.command.kfdelivery.com",
+      "token_url": "https://idp.keyfactor.command.kfdelivery.com/oauth2/token",
+      "client_id": "client-id",
+      "client_secret": "client-secret",
+      "api_path": "KeyfactorAPI"
+    },
+    "server2": {
+      "host": "keyfactor.command.kfdelivery.com",
+      "token_url": "https://idp.keyfactor.command.kfdelivery.com/oauth2/token",
+      "client_id": "client-id",
+      "client_secret": "client-secret",
+      "api_path": "KeyfactorAPI"
+    }
+  }
+}
+```
+
+#### YAML
+```yaml
+servers:
+  default:
+    host: keyfactor.command.kfdelivery.com
+    token_url: https://idp.keyfactor.command.kfdelivery.com/oauth2/token
+    client_id: client-id
+    client_secret: client-secret
+    api_path: KeyfactorAPI
+  server2:
+    host: keyfactor.command.kfdelivery.com
+    token_url: https://idp.keyfactor.command.kfdelivery.com/oauth2/token
+    client_id: client-id
+    client_secret: client-secret
+    api_path: KeyfactorAPI
+```

@@ -2,7 +2,7 @@
   "servers": {
     "default": {
       "host": "keyfactor.command.kfdelivery.com",
-      "oauth_token_url": "idp.keyfactor.command.kfdelivery.com",
+      "token_url": "idp.keyfactor.command.kfdelivery.com",
       "username": "keyfactor",
       "password": "password",
       "client_id": "client-id",
@@ -20,7 +20,7 @@
     },
     "server2": {
       "host": "keyfactor2.command.kfdelivery.com",
-      "oauth_token_url": "idp.keyfactor2.command.kfdelivery.com",
+      "token_url": "idp.keyfactor2.command.kfdelivery.com",
       "username": "keyfactor2",
       "password": "password2",
       "client_id": "client-id2",
