@@ -37,7 +37,7 @@ type Server struct {
 	AuthProvider  AuthProvider `json:"auth_provider,omitempty" yaml:"auth_provider,omitempty"`     // AuthProvider contains the authentication provider details.
 	SkipTLSVerify bool         `json:"skip_tls_verify,omitempty" yaml:"skip_tls_verify,omitempty"` // TLSVerify determines whether to verify the TLS certificate.
 	CACertPath    string       `json:"ca_cert_path,omitempty" yaml:"ca_cert_path,omitempty"`       // CACertPath is the path to the CA certificate to trust.
-	AuthType      string       `json:"auth_type,omitempty" yaml:"auth_type, omitempty"`            // AuthType is the type of authentication to use.
+	AuthType      string       `json:"auth_type,omitempty" yaml:"auth_type,omitempty"`             // AuthType is the type of authentication to use.
 
 }
 
