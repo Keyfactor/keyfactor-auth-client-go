@@ -201,7 +201,7 @@ func TestMergeConfigFromFile(t *testing.T) {
 
 func TestReadFullAuthConfigExample(t *testing.T) {
 	filePath := "../lib/config/full_auth_config_example.json"
-	expectedConfig := &auth_providers.Config{
+	expectedConfig := auth_providers.Config{
 		Servers: map[string]auth_providers.Server{
 			"default": {
 				Host:          "keyfactor.command.kfdelivery.com",
@@ -253,7 +253,7 @@ func TestReadFullAuthConfigExample(t *testing.T) {
 		t.Fatalf("failed to unmarshal JSON: %v", err)
 	}
 
-	if !compareConfigs(&config, expectedConfig) {
+	if !compareConfigs(&config, &expectedConfig) {
 		t.Fatalf("expected %v, got %v", expectedConfig, config)
 	}
 }
