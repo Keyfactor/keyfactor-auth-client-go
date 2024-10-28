@@ -23,9 +23,14 @@ import (
 )
 
 const (
+	// EnvKeyfactorUsername is the environment variable for the Keyfactor hostname
 	EnvKeyfactorUsername = "KEYFACTOR_USERNAME"
+
+	// EnvKeyfactorPassword is the environment variable for the Keyfactor password
 	EnvKeyfactorPassword = "KEYFACTOR_PASSWORD"
-	EnvKeyfactorDomain   = "KEYFACTOR_DOMAIN"
+
+	// EnvKeyfactorDomain is the environment variable for the Keyfactor domain
+	EnvKeyfactorDomain = "KEYFACTOR_DOMAIN"
 )
 
 // Basic Authenticator
@@ -127,7 +132,7 @@ func (a *CommandAuthConfigBasic) Build() (Authenticator, error) {
 	return &BasicAuthAuthenticator{Client: client}, nil
 }
 
-// ValidateAuthConfig validates the configuration
+// ValidateAuthConfig validates the basic authentication configuration.
 func (a *CommandAuthConfigBasic) ValidateAuthConfig() error {
 	silentLoad := true
 	if a.CommandAuthConfig.ConfigProfile != "" {
@@ -182,7 +187,7 @@ func (a *CommandAuthConfigBasic) ValidateAuthConfig() error {
 	return a.CommandAuthConfig.ValidateAuthConfig()
 }
 
-// Authenticate authenticates the user
+// Authenticate authenticates the request using basic authentication.
 func (a *CommandAuthConfigBasic) Authenticate() error {
 	cErr := a.ValidateAuthConfig()
 	if cErr != nil {
@@ -253,3 +258,31 @@ func (a *CommandAuthConfigBasic) GetServerConfig() *Server {
 	}
 	return &server
 }
+
+// Example usage of CommandAuthConfigBasic
+//
+// This example demonstrates how to use CommandAuthConfigBasic to authenticate a user.
+//
+//	func ExampleCommandAuthConfigBasic_Authenticate() {
+//		authConfig := &CommandAuthConfigBasic{
+//			CommandAuthConfig: CommandAuthConfig{
+//				ConfigFilePath: "/path/to/config.json",
+//				ConfigProfile:  "default",
+//				CommandHostName: "exampleHost",
+//				CommandPort:     443,
+//				CommandAPIPath:  "/api/v1",
+//				CommandCACert:   "/path/to/ca-cert.pem",
+//				SkipVerify:      true,
+//			},
+//			Username: "exampleUser",
+//			Password: "examplePassword",
+//			Domain:   "exampleDomain",
+//		}
+//
+//		err := authConfig.Authenticate()
+//		if err != nil {
+//			fmt.Println("Authentication failed:", err)
+//		} else {
+//			fmt.Println("Authentication successful")
+//		}
+//	}

@@ -53,6 +53,7 @@ type Config struct {
 	Servers map[string]Server `json:"servers,omitempty" yaml:"servers,omitempty"` // Servers is a map of server configurations.
 }
 
+// NewConfig creates a new Config configuration.
 func NewConfig() *Config {
 	return &Config{
 		Servers: make(map[string]Server),
@@ -215,6 +216,7 @@ func MergeConfigFromFile(filePath string, config *Config) error {
 	return nil
 }
 
+// GetAuthType returns the type of authentication to use based on the configuration params.
 func (s *Server) GetAuthType() string {
 	if s.ClientID != "" && s.ClientSecret != "" {
 		s.AuthType = "oauth"
@@ -286,3 +288,55 @@ func (s *Server) GetOAuthClientConfig() (*CommandConfigOauth, error) {
 	}
 	return &oauthConfig, nil
 }
+
+// Example usage of Config
+//
+// This example demonstrates how to use Config to read and write server configurations.
+//
+//	func ExampleConfig_ReadWrite() {
+//		config := NewConfig()
+//
+//		// Add a server configuration
+//		config.Servers["exampleServer"] = Server{
+//			Host:          "exampleHost",
+//			Port:          443,
+//			Username:      "exampleUser",
+//			Password:      "examplePassword",
+//			Domain:        "exampleDomain",
+//			ClientID:      "exampleClientID",
+//			ClientSecret:  "exampleClientSecret",
+//			OAuthTokenUrl: "https://example.com/oauth/token",
+//			APIPath:       "/api/v1",
+//			SkipTLSVerify: true,
+//			CACertPath:    "/path/to/ca-cert.pem",
+//			AuthType:      "oauth",
+//		}
+//
+//		// Write the configuration to a JSON file
+//		err := WriteConfigToJSON("/path/to/config.json", config)
+//		if err != nil {
+//			fmt.Println("Failed to write config to JSON:", err)
+//		}
+//
+//		// Read the configuration from a JSON file
+//		readConfig, err := ReadConfigFromJSON("/path/to/config.json")
+//		if err != nil {
+//			fmt.Println("Failed to read config from JSON:", err)
+//		} else {
+//			fmt.Println("Read config from JSON:", readConfig)
+//		}
+//
+//		// Write the configuration to a YAML file
+//		err = WriteConfigToYAML("/path/to/config.yaml", config)
+//		if err != nil {
+//			fmt.Println("Failed to write config to YAML:", err)
+//		}
+//
+//		// Read the configuration from a YAML file
+//		readConfig, err = ReadConfigFromYAML("/path/to/config.yaml")
+//		if err != nil {
+//			fmt.Println("Failed to read config from YAML:", err)
+//		} else {
+//			fmt.Println("Read config from YAML:", readConfig)
+//		}
+//	}

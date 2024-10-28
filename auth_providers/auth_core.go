@@ -30,23 +30,55 @@ import (
 )
 
 const (
-	DefaultCommandPort    = 443
-	DefaultCommandAPIPath = "KeyfactorAPI"
-	DefaultAPIVersion     = "1"
-	DefaultAPIClientName  = "APIClient"
-	DefaultProductVersion = "10.5.0.0"
-	DefaultConfigFilePath = ".keyfactor/command_config.json"
-	DefaultConfigProfile  = "default"
-	DefaultClientTimeout  = 60
+	// DefaultCommandPort is the default port for Keyfactor Command API
+	DefaultCommandPort = 443
 
-	EnvKeyfactorHostName      = "KEYFACTOR_HOSTNAME"
-	EnvKeyfactorPort          = "KEYFACTOR_PORT"
-	EnvKeyfactorAPIPath       = "KEYFACTOR_API_PATH"
-	EnvKeyfactorSkipVerify    = "KEYFACTOR_SKIP_VERIFY"
-	EnvKeyfactorCACert        = "KEYFACTOR_CA_CERT"
-	EnvKeyfactorAuthProvider  = "KEYFACTOR_AUTH_PROVIDER"
-	EnvKeyfactorAuthProfile   = "KEYFACTOR_AUTH_CONFIG_PROFILE"
-	EnvKeyfactorConfigFile    = "KEYFACTOR_AUTH_CONFIG_FILE"
+	// DefaultCommandAPIPath is the default path for Keyfactor Command API
+	DefaultCommandAPIPath = "KeyfactorAPI"
+
+	// DefaultAPIVersion is the default version for Keyfactor Command API
+	DefaultAPIVersion = "1"
+
+	// DefaultAPIClientName is the default client name for Keyfactor Command API
+	DefaultAPIClientName = "APIClient"
+
+	// DefaultProductVersion is the default product version for Keyfactor Command API
+	DefaultProductVersion = "10.5.0.0"
+
+	// DefaultConfigFilePath is the default path for the configuration file
+	DefaultConfigFilePath = ".keyfactor/command_config.json"
+
+	// DefaultConfigProfile is the default profile for the configuration file
+	DefaultConfigProfile = "default"
+
+	// DefaultClientTimeout is the default timeout for the http Client
+	DefaultClientTimeout = 60
+
+	// EnvKeyfactorHostName is the environment variable for the Keyfactor Command hostname
+	EnvKeyfactorHostName = "KEYFACTOR_HOSTNAME"
+
+	// EnvKeyfactorPort is the environment variable for the Keyfactor Command http(s) port
+	EnvKeyfactorPort = "KEYFACTOR_PORT"
+
+	// EnvKeyfactorAPIPath is the environment variable for the Keyfactor Command API path
+	EnvKeyfactorAPIPath = "KEYFACTOR_API_PATH"
+
+	// EnvKeyfactorSkipVerify is the environment variable for skipping TLS verification when communicating with Keyfactor Command
+	EnvKeyfactorSkipVerify = "KEYFACTOR_SKIP_VERIFY"
+
+	// EnvKeyfactorCACert is the environment variable for the CA certificate to be used for TLS verification when communicating with Keyfactor Command API
+	EnvKeyfactorCACert = "KEYFACTOR_CA_CERT"
+
+	// EnvKeyfactorAuthProvider is the environment variable for the authentication provider to be used for Keyfactor Command API
+	EnvKeyfactorAuthProvider = "KEYFACTOR_AUTH_PROVIDER"
+
+	// EnvKeyfactorAuthProfile is the environment variable for the profile of the configuration file
+	EnvKeyfactorAuthProfile = "KEYFACTOR_AUTH_CONFIG_PROFILE"
+
+	// EnvKeyfactorConfigFile is the environment variable for the configuration file to reference for connecting to the Keyfactor Command API
+	EnvKeyfactorConfigFile = "KEYFACTOR_AUTH_CONFIG_FILE"
+
+	// EnvKeyfactorClientTimeout is the environment variable for the timeout for the http Client
 	EnvKeyfactorClientTimeout = "KEYFACTOR_CLIENT_TIMEOUT"
 )
 
@@ -111,8 +143,9 @@ type CommandAuthConfig struct {
 	HttpClient *http.Client
 }
 
+// cleanHostName cleans the hostname for authentication to Keyfactor Command API.
 func cleanHostName(hostName string) string {
-	// check if hostname is a url and if so, extract the hostname
+	// check if hostname is a URL and if so, extract the hostname
 	if strings.Contains(hostName, "://") {
 		hostName = strings.Split(hostName, "://")[1]
 		//remove any trailing paths
@@ -620,6 +653,7 @@ func expandPath(path string) (string, error) {
 	return path, nil
 }
 
+// GetServerConfig returns the server configuration.
 func (c *CommandAuthConfig) GetServerConfig() *Server {
 	server := Server{
 		Host:          c.CommandHostName,
@@ -638,3 +672,27 @@ func (c *CommandAuthConfig) GetServerConfig() *Server {
 	}
 	return &server
 }
+
+// Example usage of CommandAuthConfig
+//
+// This example demonstrates how to use CommandAuthConfig to authenticate to the Keyfactor Command API.
+//
+//	func ExampleCommandAuthConfig_Authenticate() {
+//		authConfig := &CommandAuthConfig{
+//			ConfigFilePath:   "/path/to/config.json",
+//			ConfigProfile:    "default",
+//			CommandHostName:  "exampleHost",
+//			CommandPort:      443,
+//			CommandAPIPath:   "/api/v1",
+//			CommandCACert:    "/path/to/ca-cert.pem",
+//			SkipVerify:       true,
+//			HttpClientTimeout: 60,
+//		}
+//
+//		err := authConfig.Authenticate()
+//		if err != nil {
+//			fmt.Println("Authentication failed:", err)
+//		} else {
+//			fmt.Println("Authentication successful")
+//		}
+//	}

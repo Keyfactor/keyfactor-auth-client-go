@@ -50,11 +50,14 @@ type OAuthAuthenticator struct {
 	Client *http.Client
 }
 
+// GetHttpClient returns the http client
 func (a *OAuthAuthenticator) GetHttpClient() (*http.Client, error) {
 	return a.Client, nil
 }
 
+// CommandConfigOauth represents the configuration needed for authentication to Keyfactor Command API using OAuth2.
 type CommandConfigOauth struct {
+	// CommandAuthConfig is a reference to the base configuration needed for authentication to Keyfactor Command API
 	CommandAuthConfig
 
 	// ClientID is the Client ID for Keycloak authentication
@@ -76,16 +79,16 @@ type CommandConfigOauth struct {
 	CACertificates []*x509.Certificate `json:"-"`
 
 	// AccessToken is the access token for Keycloak authentication
-	AccessToken string `json:"access_token;omitempty"`
+	AccessToken string `json:"access_token,omitempty"`
 
 	// RefreshToken is the refresh token for Keycloak authentication
-	RefreshToken string `json:"refresh_token;omitempty"`
+	RefreshToken string `json:"refresh_token,omitempty"`
 
 	// Expiry is the expiry time of the access token
-	Expiry time.Time `json:"expiry;omitempty"`
+	Expiry time.Time `json:"expiry,omitempty"`
 
 	// TokenURL is the token URL for Keycloak authentication
-	TokenURL string `json:"token_url"`
+	TokenURL string `json:"token_url,omitempty"`
 
 	//// AuthPort
 	//AuthPort string `json:"auth_port,omitempty"`
@@ -178,7 +181,7 @@ func (b *CommandConfigOauth) GetHttpClient() (*http.Client, error) {
 		Scopes:       b.Scopes,
 	}
 
-	if b.Scopes == nil || len(b.Scopes) == 0 {
+	if len(b.Scopes) == 0 {
 		b.Scopes = []string{"openid", "profile", "email"}
 	}
 
@@ -205,6 +208,7 @@ func (b *CommandConfigOauth) GetHttpClient() (*http.Client, error) {
 
 }
 
+// Build creates an OAuth authenticator.
 func (b *CommandConfigOauth) Build() (Authenticator, error) {
 
 	client, cErr := b.GetHttpClient()
@@ -215,6 +219,7 @@ func (b *CommandConfigOauth) Build() (Authenticator, error) {
 	return &OAuthAuthenticator{Client: client}, nil
 }
 
+// LoadConfig loads the configuration for Keyfactor Command API using OAuth2.
 func (b *CommandConfigOauth) LoadConfig(profile, path string, silentLoad bool) (*Server, error) {
 	serverConfig, sErr := b.CommandAuthConfig.LoadConfig(profile, path, silentLoad)
 	if sErr != nil {
@@ -264,6 +269,7 @@ func (b *CommandConfigOauth) LoadConfig(profile, path string, silentLoad bool) (
 	return serverConfig, nil
 }
 
+// ValidateAuthConfig validates the configuration for Keyfactor Command API using OAuth2.
 func (b *CommandConfigOauth) ValidateAuthConfig() error {
 
 	silentLoad := true
@@ -336,6 +342,7 @@ func (b *CommandConfigOauth) ValidateAuthConfig() error {
 	return b.CommandAuthConfig.ValidateAuthConfig()
 }
 
+// Authenticate authenticates to Keyfactor Command API using OAuth2.
 func (b *CommandConfigOauth) Authenticate() error {
 
 	// validate auth config
@@ -372,6 +379,7 @@ func (b *CommandConfigOauth) Authenticate() error {
 	return nil
 }
 
+// GetServerConfig returns the server configuration for Keyfactor Command API using OAuth2.
 func (b *CommandConfigOauth) GetServerConfig() *Server {
 	server := Server{
 		Host:          b.CommandHostName,
@@ -387,3 +395,36 @@ func (b *CommandConfigOauth) GetServerConfig() *Server {
 	}
 	return &server
 }
+
+// Example usage of CommandConfigOauth
+//
+// This example demonstrates how to use CommandConfigOauth to authenticate to the Keyfactor Command API using OAuth2.
+//
+//	func ExampleCommandConfigOauth_Authenticate() {
+//		authConfig := &CommandConfigOauth{
+//			CommandAuthConfig: CommandAuthConfig{
+//				ConfigFilePath:   "/path/to/config.json",
+//				ConfigProfile:    "default",
+//				CommandHostName:  "exampleHost",
+//				CommandPort:      443,
+//				CommandAPIPath:   "/api/v1",
+//				CommandCACert:    "/path/to/ca-cert.pem",
+//				SkipVerify:       true,
+//				HttpClientTimeout: 60,
+//			},
+//			ClientID:          "exampleClientID",
+//			ClientSecret:      "exampleClientSecret",
+//			TokenURL:          "https://example.com/oauth/token",
+//			Scopes:            []string{"openid", "profile", "email"},
+//			Audience:          "exampleAudience",
+//			CACertificatePath: "/path/to/ca-cert.pem",
+//			AccessToken:       "exampleAccessToken",
+//		}
+//
+//		err := authConfig.Authenticate()
+//		if err != nil {
+//			fmt.Println("Authentication failed:", err)
+//		} else {
+//			fmt.Println("Authentication successful")
+//		}
+//	}
