@@ -21,6 +21,9 @@ jobs:
         with:
           go-version: 1.22
 
+      - name: Get Public IP
+        run: curl -s https://api.ipify.org
+
       - name: Run tests
         run: |
           if [ -n "${{ secrets.KEYFACTOR_AUTH_CONFIG_B64 }}" ]; then
