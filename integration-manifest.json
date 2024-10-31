@@ -1,0 +1,11 @@
+{
+  "$schema": "https://keyfactor.github.io/integration-manifest-schema.json",
+  "integration_type": "api-client",
+  "name": "Keyfactor Auth Client - Golang",
+  "status": "production",
+  "description": "The Keyfactor Auth Client - Golang is a Go module that handles authentication and authorization for the Keyfactor API.",
+  "support_level": "kf-community",
+  "link_github": false,
+  "update_catalog": false
+}
+
