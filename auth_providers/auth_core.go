@@ -436,6 +436,9 @@ func (c *CommandAuthConfig) updateCACerts() error {
 // Authenticate performs the authentication test to Keyfactor Command API and sets Command product version.
 func (c *CommandAuthConfig) Authenticate() error {
 
+	if c.HttpClient == nil {
+		c.SetClient(nil)
+	}
 	//create headers for request
 	headers := map[string]string{
 		"Content-Type":               "application/json",
