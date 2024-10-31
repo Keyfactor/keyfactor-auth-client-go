@@ -24,6 +24,14 @@ jobs:
       - name: Get Public IP
         run: curl -s https://api.ipify.org
 
+      - name: Validate lab cert is present
+        run: |
+          pwd
+          ls -la
+          ls -la lib
+          ls -la lib/certs
+          cat lib/certs/int-oidc-lab.eastus2.cloudapp.azure.com.pem
+
       - name: Run tests
         run: |
           if [ -n "${{ secrets.KEYFACTOR_AUTH_CONFIG_B64 }}" ]; then
