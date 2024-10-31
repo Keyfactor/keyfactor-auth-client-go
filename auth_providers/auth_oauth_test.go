@@ -173,7 +173,7 @@ func TestCommandConfigOauth_Authenticate(t *testing.T) {
 
 	// Begin test case
 	noParamsConfig = &auth_providers.CommandConfigOauth{}
-	httpsFailEnvExpected := []string{"tls: failed to verify certificate", "certificate is not trusted"}
+	httpsFailEnvExpected := []string{"tls: failed to verify certificate"}
 	authOauthTest(
 		t,
 		fmt.Sprintf("w/o env %s", auth_providers.EnvKeyfactorCACert),
@@ -302,7 +302,7 @@ func TestCommandConfigOauth_Authenticate(t *testing.T) {
 	httpsFailConfigFile := &auth_providers.CommandConfigOauth{}
 	httpsFailConfigFile.
 		WithConfigProfile("oauth")
-	httpsFailConfigFileExpected := []string{"tls: failed to verify certificate", "certificate is not trusted"}
+	httpsFailConfigFileExpected := []string{"tls: failed to verify certificate"}
 	authOauthTest(
 		t, "oAuth with valid implicit config file https fail", true, httpsFailConfigFile,
 		httpsFailConfigFileExpected...,
