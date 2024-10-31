@@ -270,70 +270,70 @@ func (c *CommandAuthConfig) ValidateAuthConfig() error {
 			c.HttpClientTimeout = DefaultClientTimeout
 		}
 	}
-	c.SetClient(nil)
+
+	if c.CommandCACert == "" {
+		// check if CommandCACert is set in environment
+		if caCert, ok := os.LookupEnv(EnvKeyfactorCACert); ok {
+			c.CommandCACert = caCert
+		} else {
+			return nil
+		}
+	}
 
 	// check for skip verify in environment
 	if skipVerify, ok := os.LookupEnv(EnvKeyfactorSkipVerify); ok {
 		c.SkipVerify = skipVerify == "true" || skipVerify == "1"
 	}
 
-	if c.SkipVerify {
-		c.HttpClient.Transport = &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-		}
-		return nil
-	}
-
-	caErr := c.updateCACerts()
-	if caErr != nil {
-		return caErr
-	}
+	//TODO: This should be part of BuildTransport
+	//if c.SkipVerify {
+	//	c.HttpClient.Transport = &http.Transport{
+	//		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+	//	}
+	//	//return nil
+	//}
+	//
+	//caErr := c.updateCACerts()
+	//if caErr != nil {
+	//	return caErr
+	//}
 
 	return nil
 }
 
 // BuildTransport creates a custom http Transport for authentication to Keyfactor Command API.
 func (c *CommandAuthConfig) BuildTransport() (*http.Transport, error) {
-	output := &http.Transport{
-		Proxy: http.ProxyFromEnvironment,
-		TLSClientConfig: &tls.Config{
-			Renegotiation: tls.RenegotiateOnceAsClient,
-		},
-		TLSHandshakeTimeout: 10 * time.Second,
+	var output *http.Transport
+	if c.HttpClient == nil {
+		c.SetClient(nil)
 	}
-	if c.SkipVerify {
-		output.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
-	}
-
-	// Load the system certs
-	if c.CommandCACert != "" {
-		rootCAs, pErr := x509.SystemCertPool()
-		if pErr != nil {
-			return nil, pErr
-		}
-		if rootCAs == nil {
-			rootCAs = x509.NewCertPool()
-		}
-
-		// check if CommandCACert is a file
-		if _, err := os.Stat(c.CommandCACert); err == nil {
-			cert, ioErr := os.ReadFile(c.CommandCACert)
-			if ioErr != nil {
-				return nil, ioErr
-			}
-			// Append your custom cert to the pool
-			if ok := rootCAs.AppendCertsFromPEM(cert); !ok {
-				return nil, fmt.Errorf("failed to append custom CA cert to pool")
-			}
+	// check if c already has a transport and if it does, assign it to output else create a new transport
+	if c.HttpClient.Transport != nil {
+		if transport, ok := c.HttpClient.Transport.(*http.Transport); ok {
+			output = transport
 		} else {
-			// Append your custom cert to the pool
-			if ok := rootCAs.AppendCertsFromPEM([]byte(c.CommandCACert)); !ok {
-				return nil, fmt.Errorf("failed to append custom CA cert to pool")
+			output = &http.Transport{
+				TLSClientConfig: &tls.Config{},
 			}
 		}
-
-		output.TLSClientConfig.RootCAs = rootCAs
+	} else {
+		output = &http.Transport{
+			Proxy: http.ProxyFromEnvironment,
+			TLSClientConfig: &tls.Config{
+				Renegotiation: tls.RenegotiateOnceAsClient,
+			},
+			TLSHandshakeTimeout: 10 * time.Second,
+		}
 	}
+
+	if c.SkipVerify {
+		output.TLSClientConfig.InsecureSkipVerify = true
+	}
+
+	if c.CommandCACert != "" {
+		_ = c.updateCACerts()
+	}
+
 	return output, nil
 }
 
@@ -343,7 +343,7 @@ func (c *CommandAuthConfig) SetClient(client *http.Client) *http.Client {
 		c.HttpClient = client
 	}
 	if c.HttpClient == nil {
-		c.HttpClient = &http.Client{}
+		c.HttpClient = http.DefaultClient
 	}
 	return c.HttpClient
 }
@@ -389,20 +389,37 @@ func (c *CommandAuthConfig) updateCACerts() error {
 		}
 	}
 
-	// Trust the augmented cert pool in our Client
-	c.HttpClient.Transport = &http.Transport{
-		TLSClientConfig: &tls.Config{
-			RootCAs: rootCAs,
-		},
+	//check if c already has a transport and if it does, update the RootCAs else create a new transport
+	if c.HttpClient.Transport != nil {
+		if transport, ok := c.HttpClient.Transport.(*http.Transport); ok {
+			transport.TLSClientConfig.RootCAs = rootCAs
+		} else {
+			c.HttpClient.Transport = &http.Transport{
+				TLSClientConfig: &tls.Config{
+					RootCAs: rootCAs,
+				},
+			}
+		}
+	} else {
+		c.HttpClient.Transport = &http.Transport{
+			TLSClientConfig: &tls.Config{
+				RootCAs: rootCAs,
+			},
+		}
 	}
+
+	// Trust the augmented cert pool in our Client
+	//c.HttpClient.Transport = &http.Transport{
+	//	TLSClientConfig: &tls.Config{
+	//		RootCAs: rootCAs,
+	//	},
+	//}
 
 	return nil
 }
 
 // Authenticate performs the authentication test to Keyfactor Command API and sets Command product version.
 func (c *CommandAuthConfig) Authenticate() error {
-	// call /Status/Endpoints API to validate credentials
-	c.SetClient(nil)
 
 	//create headers for request
 	headers := map[string]string{
@@ -428,6 +445,7 @@ func (c *CommandAuthConfig) Authenticate() error {
 	if rErr != nil {
 		return rErr
 	}
+
 	// Set headers from the map
 	for key, value := range headers {
 		req.Header.Set(key, value)
@@ -615,29 +633,45 @@ func (c *CommandAuthConfig) LoadConfig(profile string, configFilePath string, si
 
 	c.FileConfig = &server
 
-	if !silentLoad {
+	if c.CommandHostName == "" {
 		c.CommandHostName = server.Host
-		c.CommandPort = server.Port
-		c.CommandAPIPath = server.APIPath
-		c.CommandCACert = server.CACertPath
-		c.SkipVerify = server.SkipTLSVerify
-	} else {
-		if c.CommandHostName == "" {
-			c.CommandHostName = server.Host
-		}
-		if c.CommandPort <= 0 {
-			c.CommandPort = server.Port
-		}
-		if c.CommandAPIPath == "" {
-			c.CommandAPIPath = server.APIPath
-		}
-		if c.CommandCACert == "" {
-			c.CommandCACert = server.CACertPath
-		}
-		if c.SkipVerify {
-			c.SkipVerify = server.SkipTLSVerify
-		}
 	}
+	if c.CommandPort <= 0 {
+		c.CommandPort = server.Port
+	}
+	if c.CommandAPIPath == "" {
+		c.CommandAPIPath = server.APIPath
+	}
+	if c.CommandCACert == "" {
+		c.CommandCACert = server.CACertPath
+	}
+	if c.SkipVerify {
+		c.SkipVerify = server.SkipTLSVerify
+	}
+
+	//if !silentLoad {
+	//	c.CommandHostName = server.Host
+	//	c.CommandPort = server.Port
+	//	c.CommandAPIPath = server.APIPath
+	//	c.CommandCACert = server.CACertPath
+	//	c.SkipVerify = server.SkipTLSVerify
+	//} else {
+	//	if c.CommandHostName == "" {
+	//		c.CommandHostName = server.Host
+	//	}
+	//	if c.CommandPort <= 0 {
+	//		c.CommandPort = server.Port
+	//	}
+	//	if c.CommandAPIPath == "" {
+	//		c.CommandAPIPath = server.APIPath
+	//	}
+	//	if c.CommandCACert == "" {
+	//		c.CommandCACert = server.CACertPath
+	//	}
+	//	if c.SkipVerify {
+	//		c.SkipVerify = server.SkipTLSVerify
+	//	}
+	//}
 	return &server, nil
 }
 

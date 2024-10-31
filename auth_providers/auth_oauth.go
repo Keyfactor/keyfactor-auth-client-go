@@ -2,6 +2,7 @@ package auth_providers
 
 import (
 	"context"
+	"crypto/tls"
 	"crypto/x509"
 	"fmt"
 	"net/http"
@@ -153,25 +154,42 @@ func (b *CommandConfigOauth) WithAccessToken(accessToken string) *CommandConfigO
 	return b
 }
 
+func (b *CommandConfigOauth) WithHttpClient(httpClient *http.Client) *CommandConfigOauth {
+	b.HttpClient = httpClient
+	return b
+}
+
 // GetHttpClient returns an HTTP client for oAuth authentication.
 func (b *CommandConfigOauth) GetHttpClient() (*http.Client, error) {
 	cErr := b.ValidateAuthConfig()
+	var client http.Client
+	if b.CommandAuthConfig.HttpClient != nil {
+		client = *b.CommandAuthConfig.HttpClient
+	}
 	if cErr != nil {
 		return nil, cErr
 	}
 
+	if client.Transport == nil {
+		transport, tErr := b.BuildTransport()
+		if tErr != nil {
+			return nil, tErr
+		}
+		client.Transport = transport
+	}
+
 	if b.AccessToken != "" {
-		return &http.Client{
-			Transport: &oauth2.Transport{
-				Base: http.DefaultTransport,
-				Source: oauth2.StaticTokenSource(
-					&oauth2.Token{
-						AccessToken: b.AccessToken,
-						TokenType:   DefaultTokenPrefix,
-					},
-				),
-			},
-		}, nil
+		baseTransport := cloneHTTPTransport(client.Transport.(*http.Transport))
+		client.Transport = &oauth2.Transport{
+			Base: baseTransport,
+			Source: oauth2.StaticTokenSource(
+				&oauth2.Token{
+					AccessToken: b.AccessToken,
+					TokenType:   DefaultTokenPrefix,
+				},
+			),
+		}
+		return &client, nil
 	}
 
 	config := &clientcredentials.Config{
@@ -191,21 +209,17 @@ func (b *CommandConfigOauth) GetHttpClient() (*http.Client, error) {
 		}
 	}
 
-	transport, tErr := b.BuildTransport()
-	if tErr != nil {
-		return nil, tErr
-	}
+	ctx := context.WithValue(context.Background(), oauth2.HTTPClient, client)
 
-	tokenSource := config.TokenSource(context.Background())
-	oauthTransport := &oauth2.Transport{
-		Base:   transport,
+	tokenSource := config.TokenSource(ctx)
+	baseTransport := cloneHTTPTransport(client.Transport.(*http.Transport))
+	oauthTransport := oauth2.Transport{
+		Base:   baseTransport,
 		Source: tokenSource,
 	}
+	client.Transport = &oauthTransport
 
-	return &http.Client{
-		Transport: oauthTransport,
-	}, nil
-
+	return &client, nil
 }
 
 // Build creates an OAuth authenticator.
@@ -352,24 +366,15 @@ func (b *CommandConfigOauth) Authenticate() error {
 	}
 
 	// create oauth Client
-	oauthy, err := NewOAuthAuthenticatorBuilder().
-		WithClientId(b.ClientID).
-		WithClientSecret(b.ClientSecret).
-		WithTokenUrl(b.TokenURL).
-		WithAccessToken(b.AccessToken).
-		Build()
+	oauthy, err := b.GetHttpClient()
 
 	if err != nil {
 		return err
+	} else if oauthy == nil {
+		return fmt.Errorf("unable to create http client")
 	}
 
-	if oauthy != nil {
-		oClient, oerr := oauthy.GetHttpClient()
-		if oerr != nil {
-			return oerr
-		}
-		b.SetClient(oClient)
-	}
+	b.SetClient(oauthy)
 
 	aErr := b.CommandAuthConfig.Authenticate()
 	if aErr != nil {
@@ -428,3 +433,47 @@ func (b *CommandConfigOauth) GetServerConfig() *Server {
 //			fmt.Println("Authentication successful")
 //		}
 //	}
+
+func cloneHTTPTransport(original *http.Transport) *http.Transport {
+	if original == nil {
+		return nil
+	}
+
+	return &http.Transport{
+		Proxy:                 original.Proxy,
+		DialContext:           original.DialContext,
+		ForceAttemptHTTP2:     original.ForceAttemptHTTP2,
+		MaxIdleConns:          original.MaxIdleConns,
+		IdleConnTimeout:       original.IdleConnTimeout,
+		TLSHandshakeTimeout:   original.TLSHandshakeTimeout,
+		ExpectContinueTimeout: original.ExpectContinueTimeout,
+		ResponseHeaderTimeout: original.ResponseHeaderTimeout,
+		TLSClientConfig:       cloneTLSConfig(original.TLSClientConfig),
+		DialTLSContext:        original.DialTLSContext,
+		DisableKeepAlives:     original.DisableKeepAlives,
+		DisableCompression:    original.DisableCompression,
+		MaxIdleConnsPerHost:   original.MaxIdleConnsPerHost,
+		MaxConnsPerHost:       original.MaxConnsPerHost,
+		WriteBufferSize:       original.WriteBufferSize,
+		ReadBufferSize:        original.ReadBufferSize,
+	}
+}
+
+func cloneTLSConfig(original *tls.Config) *tls.Config {
+	if original == nil {
+		return nil
+	}
+
+	return &tls.Config{
+		InsecureSkipVerify:       original.InsecureSkipVerify,
+		MinVersion:               original.MinVersion,
+		MaxVersion:               original.MaxVersion,
+		CipherSuites:             original.CipherSuites,
+		PreferServerCipherSuites: original.PreferServerCipherSuites,
+		NextProtos:               original.NextProtos,
+		ServerName:               original.ServerName,
+		ClientAuth:               original.ClientAuth,
+		RootCAs:                  original.RootCAs,
+		// Deep copy the rest of the TLS fields as needed
+	}
+}

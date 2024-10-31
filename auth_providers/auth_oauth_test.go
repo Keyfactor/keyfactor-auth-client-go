@@ -107,7 +107,7 @@ func TestCommandConfigOauth_Authenticate(t *testing.T) {
 		t.FailNow()
 	}
 
-	// Delete the config file
+	//Delete the config file
 	t.Logf("Deleting config file: %s", configFilePath)
 	os.Remove(configFilePath)
 	defer func() {
@@ -118,9 +118,15 @@ func TestCommandConfigOauth_Authenticate(t *testing.T) {
 			t.Errorf("unable to write auth config to file %s: %v", configFilePath, fErr)
 		}
 	}()
+	//os.Setenv(auth_providers.EnvKeyfactorConfigFile, configFilePath)
+	//os.Setenv(auth_providers.EnvKeyfactorAuthProfile, "oauth")
+	//os.Setenv(auth_providers.EnvKeyfactorSkipVerify, "true")
 
 	t.Log("Testing oAuth with Environmental variables")
 	noParamsConfig := &auth_providers.CommandConfigOauth{}
+	noParamsConfig.
+		WithSkipVerify(true).
+		WithCommandCACert("lib/certs/int-oidc-lab.eastus2.cloudapp.azure.com.pem")
 	authOauthTest(t, "with complete Environmental variables", false, noParamsConfig)
 
 	t.Log("Testing oAuth with invalid config file path")
@@ -131,6 +137,7 @@ func TestCommandConfigOauth_Authenticate(t *testing.T) {
 
 	// Environment variables are not set
 	t.Log("Unsetting environment variables")
+	//keyfactorEnvVars := exportEnvVarsWithPrefix("KEYFACTOR_")
 	clientID, clientSecret, tokenURL := exportOAuthEnvVariables()
 	unsetOAuthEnvVariables()
 	defer func() {
@@ -168,6 +175,7 @@ func TestCommandConfigOauth_Authenticate(t *testing.T) {
 		ClientSecret: clientSecret,
 		TokenURL:     tokenURL,
 	}
+	fullParamsConfig.WithSkipVerify(true)
 	authOauthTest(t, "w/ full params variables", false, fullParamsConfig)
 
 	t.Log("Testing auth with w/ full params & invalid pass")
@@ -199,11 +207,51 @@ func TestCommandConfigOauth_Authenticate(t *testing.T) {
 		t.Errorf("unable to write auth config to file %s: %v", configFilePath, fErr)
 	}
 
-	t.Log("Testing oAuth with valid implicit config file")
-	wConfigFile := &auth_providers.CommandConfigOauth{}
-	wConfigFile.WithConfigProfile("oauth")
-	authOauthTest(t, "with valid implicit config file", false, wConfigFile)
+	//unsetOAuthEnvVariables()
 
+	t.Log("Testing oAuth with valid implicit config file profile param, caCert, and skiptls")
+	wCaCertConfigFile := &auth_providers.CommandConfigOauth{}
+	wCaCertConfigFile.
+		WithConfigProfile("oauth").
+		WithCommandCACert("lib/certs/int-oidc-lab.eastus2.cloudapp.azure.com.pem").
+		WithSkipVerify(true)
+	authOauthTest(
+		t, "oAuth with valid implicit config file profile param, caCert, and skiptls", false,
+		wCaCertConfigFile,
+	)
+
+	t.Log("Testing oAuth with skiptls param and valid implicit config file")
+	skipTLSConfigFileP := &auth_providers.CommandConfigOauth{}
+	skipTLSConfigFileP.
+		WithConfigProfile("oauth").
+		WithSkipVerify(true)
+	authOauthTest(t, "with skiptls param and valid implicit config file", false, skipTLSConfigFileP)
+
+	t.Log("Testing oAuth with valid implicit config file skiptls config param")
+	skipTLSConfigFileC := &auth_providers.CommandConfigOauth{}
+	skipTLSConfigFileC.
+		WithConfigProfile("oauth-skiptls")
+	authOauthTest(t, "with oAuth with valid implicit config file skiptls config param", false, skipTLSConfigFileC)
+
+	t.Log("Testing oAuth with valid implicit config file skiptls env")
+	os.Setenv(auth_providers.EnvKeyfactorSkipVerify, "true")
+	skipTLSConfigFileE := &auth_providers.CommandConfigOauth{}
+	skipTLSConfigFileE.
+		WithConfigProfile("oauth")
+	authOauthTest(t, "oAuth with valid implicit config file skiptls env", false, skipTLSConfigFileE)
+	os.Unsetenv(auth_providers.EnvKeyfactorSkipVerify)
+
+	t.Log("Testing oAuth with valid implicit config file https fail")
+	httpsFailConfigFile := &auth_providers.CommandConfigOauth{}
+	httpsFailConfigFile.
+		WithConfigProfile("oauth")
+	httpsFailConfigFileExpected := []string{"tls: failed to verify certificate", "certificate is not trusted"}
+	authOauthTest(
+		t, "oAuth with valid implicit config file https fail", true, httpsFailConfigFile,
+		httpsFailConfigFileExpected...,
+	)
+
+	os.Setenv(auth_providers.EnvKeyfactorSkipVerify, "true")
 	t.Log("Testing oAuth with invalid profile implicit config file")
 	invProfile := &auth_providers.CommandConfigOauth{}
 	invProfile.WithConfigProfile("invalid-profile")
@@ -287,6 +335,21 @@ func setOAuthEnvVariables(client_id, client_secret, token_url string) {
 	os.Setenv(auth_providers.EnvKeyfactorAuthTokenURL, token_url)
 }
 
+func exportEnvVarsWithPrefix(prefix string) map[string]string {
+	result := make(map[string]string)
+	for _, env := range os.Environ() {
+		// Each environment variable is in the format "KEY=VALUE"
+		pair := strings.SplitN(env, "=", 2)
+		key := pair[0]
+		value := pair[1]
+
+		if strings.HasPrefix(key, prefix) {
+			result[key] = value
+		}
+	}
+	return result
+}
+
 // exportOAuthEnvVariables sets the oAuth environment variables
 func exportOAuthEnvVariables() (string, string, string) {
 	client_id := os.Getenv(auth_providers.EnvKeyfactorClientID)
@@ -300,4 +363,14 @@ func unsetOAuthEnvVariables() {
 	os.Unsetenv(auth_providers.EnvKeyfactorClientID)
 	os.Unsetenv(auth_providers.EnvKeyfactorClientSecret)
 	os.Unsetenv(auth_providers.EnvKeyfactorAuthTokenURL)
+	os.Unsetenv(auth_providers.EnvKeyfactorSkipVerify)
+	os.Unsetenv(auth_providers.EnvKeyfactorConfigFile)
+	os.Unsetenv(auth_providers.EnvKeyfactorAuthProfile)
+	os.Unsetenv(auth_providers.EnvKeyfactorCACert)
+	os.Unsetenv(auth_providers.EnvAuthCACert)
+	//os.Unsetenv(auth_providers.EnvKeyfactorHostName)
+	//os.Unsetenv(auth_providers.EnvKeyfactorUsername)
+	//os.Unsetenv(auth_providers.EnvKeyfactorPassword)
+	//os.Unsetenv(auth_providers.EnvKeyfactorDomain)
+
 }
