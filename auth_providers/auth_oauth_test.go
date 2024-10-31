@@ -107,6 +107,8 @@ func TestCommandConfigOauth_Authenticate(t *testing.T) {
 		t.FailNow()
 	}
 
+	caCertPath := "../lib/certs/int-oidc-lab.eastus2.cloudapp.azure.com.pem"
+
 	//Delete the config file
 	t.Logf("Deleting config file: %s", configFilePath)
 	os.Remove(configFilePath)
@@ -121,7 +123,7 @@ func TestCommandConfigOauth_Authenticate(t *testing.T) {
 	//os.Setenv(auth_providers.EnvKeyfactorConfigFile, configFilePath)
 	//os.Setenv(auth_providers.EnvKeyfactorAuthProfile, "oauth")
 	os.Setenv(auth_providers.EnvKeyfactorSkipVerify, "true")
-	os.Setenv(auth_providers.EnvKeyfactorCACert, "lib/certs/int-oidc-lab.eastus2.cloudapp.azure.com.pem")
+	os.Setenv(auth_providers.EnvKeyfactorCACert, caCertPath)
 
 	//current working directory
 	cwd, _ := os.Getwd()
@@ -149,7 +151,7 @@ func TestCommandConfigOauth_Authenticate(t *testing.T) {
 	)
 	t.Log(fmt.Sprintf("Testing %s", noParamsTestName))
 	t.Logf("Setting environment variable %s", auth_providers.EnvKeyfactorCACert)
-	os.Setenv(auth_providers.EnvKeyfactorCACert, "lib/certs/int-oidc-lab.eastus2.cloudapp.azure.com.pem")
+	os.Setenv(auth_providers.EnvKeyfactorCACert, caCertPath)
 	noParamsConfig = &auth_providers.CommandConfigOauth{}
 	authOauthTest(t, noParamsTestName, false, noParamsConfig)
 	t.Logf("Unsetting environment variable %s", auth_providers.EnvKeyfactorCACert)
@@ -266,7 +268,7 @@ func TestCommandConfigOauth_Authenticate(t *testing.T) {
 	wCaCertConfigFile := &auth_providers.CommandConfigOauth{}
 	wCaCertConfigFile.
 		WithConfigProfile("oauth").
-		WithCommandCACert("lib/certs/int-oidc-lab.eastus2.cloudapp.azure.com.pem").
+		WithCommandCACert(caCertPath).
 		WithSkipVerify(true)
 	authOauthTest(
 		t, "oAuth with valid implicit config file profile param, caCert, and skiptls", false,
