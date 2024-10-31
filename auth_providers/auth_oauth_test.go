@@ -123,6 +123,10 @@ func TestCommandConfigOauth_Authenticate(t *testing.T) {
 	os.Setenv(auth_providers.EnvKeyfactorSkipVerify, "true")
 	os.Setenv(auth_providers.EnvKeyfactorCACert, "lib/certs/int-oidc-lab.eastus2.cloudapp.azure.com.pem")
 
+	//current working directory
+	cwd, _ := os.Getwd()
+	t.Logf("Current working directory: %s", cwd)
+
 	// Begin test case
 	noParamsTestName := fmt.Sprintf(
 		"w/ complete ENV variables & %s,%s", auth_providers.EnvKeyfactorCACert,
