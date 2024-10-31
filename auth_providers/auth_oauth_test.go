@@ -120,14 +120,62 @@ func TestCommandConfigOauth_Authenticate(t *testing.T) {
 	}()
 	//os.Setenv(auth_providers.EnvKeyfactorConfigFile, configFilePath)
 	//os.Setenv(auth_providers.EnvKeyfactorAuthProfile, "oauth")
-	//os.Setenv(auth_providers.EnvKeyfactorSkipVerify, "true")
+	os.Setenv(auth_providers.EnvKeyfactorSkipVerify, "true")
+	os.Setenv(auth_providers.EnvKeyfactorCACert, "lib/certs/int-oidc-lab.eastus2.cloudapp.azure.com.pem")
 
-	t.Log("Testing oAuth with Environmental variables")
+	// Begin test case
+	noParamsTestName := fmt.Sprintf(
+		"w/ complete ENV variables & %s,%s", auth_providers.EnvKeyfactorCACert,
+		auth_providers.EnvKeyfactorSkipVerify,
+	)
+	t.Log(fmt.Sprintf("Testing %s", noParamsTestName))
 	noParamsConfig := &auth_providers.CommandConfigOauth{}
-	noParamsConfig.
-		WithSkipVerify(true).
-		WithCommandCACert("lib/certs/int-oidc-lab.eastus2.cloudapp.azure.com.pem")
-	authOauthTest(t, "with complete Environmental variables", false, noParamsConfig)
+	authOauthTest(
+		t, noParamsTestName, false, noParamsConfig,
+	)
+	t.Logf("Unsetting environment variable %s", auth_providers.EnvKeyfactorCACert)
+	os.Unsetenv(auth_providers.EnvKeyfactorCACert)
+	t.Logf("Unsetting environment variable %s", auth_providers.EnvKeyfactorSkipVerify)
+	os.Unsetenv(auth_providers.EnvKeyfactorSkipVerify)
+	// end test case
+
+	// Begin test case
+	noParamsTestName = fmt.Sprintf(
+		"w/ complete ENV variables & %s", auth_providers.EnvKeyfactorCACert,
+	)
+	t.Log(fmt.Sprintf("Testing %s", noParamsTestName))
+	t.Logf("Setting environment variable %s", auth_providers.EnvKeyfactorCACert)
+	os.Setenv(auth_providers.EnvKeyfactorCACert, "lib/certs/int-oidc-lab.eastus2.cloudapp.azure.com.pem")
+	noParamsConfig = &auth_providers.CommandConfigOauth{}
+	authOauthTest(t, noParamsTestName, false, noParamsConfig)
+	t.Logf("Unsetting environment variable %s", auth_providers.EnvKeyfactorCACert)
+	os.Unsetenv(auth_providers.EnvKeyfactorCACert)
+	// end test case
+
+	// Begin test case
+	noParamsTestName = fmt.Sprintf(
+		"w/ complete ENV variables & %s", auth_providers.EnvKeyfactorSkipVerify,
+	)
+	t.Log(fmt.Sprintf("Testing %s", noParamsTestName))
+	t.Logf("Setting environment variable %s", auth_providers.EnvKeyfactorSkipVerify)
+	os.Setenv(auth_providers.EnvKeyfactorSkipVerify, "true")
+	noParamsConfig = &auth_providers.CommandConfigOauth{}
+	authOauthTest(t, noParamsTestName, false, noParamsConfig)
+	t.Logf("Unsetting environment variable %s", auth_providers.EnvKeyfactorSkipVerify)
+	os.Unsetenv(auth_providers.EnvKeyfactorSkipVerify)
+	// end test case
+
+	// Begin test case
+	noParamsConfig = &auth_providers.CommandConfigOauth{}
+	httpsFailEnvExpected := []string{"tls: failed to verify certificate", "certificate is not trusted"}
+	authOauthTest(
+		t,
+		fmt.Sprintf("w/o env %s", auth_providers.EnvKeyfactorCACert),
+		true,
+		noParamsConfig,
+		httpsFailEnvExpected...,
+	)
+	// end test case
 
 	t.Log("Testing oAuth with invalid config file path")
 	invFilePath := &auth_providers.CommandConfigOauth{}
@@ -184,6 +232,7 @@ func TestCommandConfigOauth_Authenticate(t *testing.T) {
 		ClientSecret: "invalid-client-secret",
 		TokenURL:     tokenURL,
 	}
+	fullParamsInvalidPassConfig.WithSkipVerify(true)
 	invalidCredsExpectedError := []string{
 		"oauth2", "unauthorized_client", "Invalid client or Invalid client credentials",
 	}
@@ -234,11 +283,13 @@ func TestCommandConfigOauth_Authenticate(t *testing.T) {
 	authOauthTest(t, "with oAuth with valid implicit config file skiptls config param", false, skipTLSConfigFileC)
 
 	t.Log("Testing oAuth with valid implicit config file skiptls env")
+	t.Logf("Setting environment variable %s", auth_providers.EnvKeyfactorSkipVerify)
 	os.Setenv(auth_providers.EnvKeyfactorSkipVerify, "true")
 	skipTLSConfigFileE := &auth_providers.CommandConfigOauth{}
 	skipTLSConfigFileE.
 		WithConfigProfile("oauth")
 	authOauthTest(t, "oAuth with valid implicit config file skiptls env", false, skipTLSConfigFileE)
+	t.Logf("Unsetting environment variable %s", auth_providers.EnvKeyfactorSkipVerify)
 	os.Unsetenv(auth_providers.EnvKeyfactorSkipVerify)
 
 	t.Log("Testing oAuth with valid implicit config file https fail")
@@ -251,7 +302,6 @@ func TestCommandConfigOauth_Authenticate(t *testing.T) {
 		httpsFailConfigFileExpected...,
 	)
 
-	os.Setenv(auth_providers.EnvKeyfactorSkipVerify, "true")
 	t.Log("Testing oAuth with invalid profile implicit config file")
 	invProfile := &auth_providers.CommandConfigOauth{}
 	invProfile.WithConfigProfile("invalid-profile")
@@ -260,12 +310,16 @@ func TestCommandConfigOauth_Authenticate(t *testing.T) {
 
 	t.Log("Testing oAuth with invalid creds implicit config file")
 	invProfileCreds := &auth_providers.CommandConfigOauth{}
-	invProfileCreds.WithConfigProfile("oauth_invalid_creds")
+	invProfileCreds.
+		WithConfigProfile("oauth_invalid_creds").
+		WithSkipVerify(true)
 	authOauthTest(t, "with invalid creds implicit config file", true, invProfileCreds, invalidCredsExpectedError...)
 
 	t.Log("Testing oAuth with invalid Command host implicit config file")
 	invCmdHost := &auth_providers.CommandConfigOauth{}
-	invCmdHost.WithConfigProfile("oauth_invalid_host")
+	invCmdHost.
+		WithConfigProfile("oauth_invalid_host").
+		WithSkipVerify(true)
 	invHostExpectedError := []string{"no such host"}
 	authOauthTest(t, "with invalid creds implicit config file", true, invCmdHost, invHostExpectedError...)
 }

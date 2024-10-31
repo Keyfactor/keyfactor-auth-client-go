@@ -2,7 +2,6 @@ package auth_providers
 
 import (
 	"context"
-	"crypto/tls"
 	"crypto/x509"
 	"fmt"
 	"net/http"
@@ -49,6 +48,11 @@ var _ Authenticator = &OAuthAuthenticator{}
 // OAuthAuthenticator is an Authenticator that uses OAuth2 for authentication.
 type OAuthAuthenticator struct {
 	Client *http.Client
+}
+
+type oauth2Transport struct {
+	base http.RoundTripper
+	src  oauth2.TokenSource
 }
 
 // GetHttpClient returns the http client
@@ -162,24 +166,17 @@ func (b *CommandConfigOauth) WithHttpClient(httpClient *http.Client) *CommandCon
 // GetHttpClient returns an HTTP client for oAuth authentication.
 func (b *CommandConfigOauth) GetHttpClient() (*http.Client, error) {
 	cErr := b.ValidateAuthConfig()
-	var client http.Client
-	if b.CommandAuthConfig.HttpClient != nil {
-		client = *b.CommandAuthConfig.HttpClient
-	}
 	if cErr != nil {
 		return nil, cErr
 	}
 
-	if client.Transport == nil {
-		transport, tErr := b.BuildTransport()
-		if tErr != nil {
-			return nil, tErr
-		}
-		client.Transport = transport
+	var client http.Client
+	baseTransport, tErr := b.BuildTransport()
+	if tErr != nil {
+		return nil, tErr
 	}
 
 	if b.AccessToken != "" {
-		baseTransport := cloneHTTPTransport(client.Transport.(*http.Transport))
 		client.Transport = &oauth2.Transport{
 			Base: baseTransport,
 			Source: oauth2.StaticTokenSource(
@@ -209,15 +206,15 @@ func (b *CommandConfigOauth) GetHttpClient() (*http.Client, error) {
 		}
 	}
 
-	ctx := context.WithValue(context.Background(), oauth2.HTTPClient, client)
-
+	ctx := context.WithValue(context.Background(), oauth2.HTTPClient, &http.Client{Transport: baseTransport})
 	tokenSource := config.TokenSource(ctx)
-	baseTransport := cloneHTTPTransport(client.Transport.(*http.Transport))
-	oauthTransport := oauth2.Transport{
-		Base:   baseTransport,
-		Source: tokenSource,
+
+	client = http.Client{
+		Transport: &oauth2Transport{
+			base: baseTransport,
+			src:  tokenSource,
+		},
 	}
-	client.Transport = &oauthTransport
 
 	return &client, nil
 }
@@ -375,6 +372,7 @@ func (b *CommandConfigOauth) Authenticate() error {
 	}
 
 	b.SetClient(oauthy)
+	//b.DefaultHttpClient = oauthy
 
 	aErr := b.CommandAuthConfig.Authenticate()
 	if aErr != nil {
@@ -401,79 +399,16 @@ func (b *CommandConfigOauth) GetServerConfig() *Server {
 	return &server
 }
 
-// Example usage of CommandConfigOauth
-//
-// This example demonstrates how to use CommandConfigOauth to authenticate to the Keyfactor Command API using OAuth2.
-//
-//	func ExampleCommandConfigOauth_Authenticate() {
-//		authConfig := &CommandConfigOauth{
-//			CommandAuthConfig: CommandAuthConfig{
-//				ConfigFilePath:   "/path/to/config.json",
-//				ConfigProfile:    "default",
-//				CommandHostName:  "exampleHost",
-//				CommandPort:      443,
-//				CommandAPIPath:   "/api/v1",
-//				CommandCACert:    "/path/to/ca-cert.pem",
-//				SkipVerify:       true,
-//				HttpClientTimeout: 60,
-//			},
-//			ClientID:          "exampleClientID",
-//			ClientSecret:      "exampleClientSecret",
-//			TokenURL:          "https://example.com/oauth/token",
-//			Scopes:            []string{"openid", "profile", "email"},
-//			Audience:          "exampleAudience",
-//			CACertificatePath: "/path/to/ca-cert.pem",
-//			AccessToken:       "exampleAccessToken",
-//		}
-//
-//		err := authConfig.Authenticate()
-//		if err != nil {
-//			fmt.Println("Authentication failed:", err)
-//		} else {
-//			fmt.Println("Authentication successful")
-//		}
-//	}
-
-func cloneHTTPTransport(original *http.Transport) *http.Transport {
-	if original == nil {
-		return nil
+// RoundTrip executes a single HTTP transaction, adding the OAuth2 token to the request
+func (t *oauth2Transport) RoundTrip(req *http.Request) (*http.Response, error) {
+	token, err := t.src.Token()
+	if err != nil {
+		return nil, fmt.Errorf("failed to retrieve OAuth token: %w", err)
 	}
 
-	return &http.Transport{
-		Proxy:                 original.Proxy,
-		DialContext:           original.DialContext,
-		ForceAttemptHTTP2:     original.ForceAttemptHTTP2,
-		MaxIdleConns:          original.MaxIdleConns,
-		IdleConnTimeout:       original.IdleConnTimeout,
-		TLSHandshakeTimeout:   original.TLSHandshakeTimeout,
-		ExpectContinueTimeout: original.ExpectContinueTimeout,
-		ResponseHeaderTimeout: original.ResponseHeaderTimeout,
-		TLSClientConfig:       cloneTLSConfig(original.TLSClientConfig),
-		DialTLSContext:        original.DialTLSContext,
-		DisableKeepAlives:     original.DisableKeepAlives,
-		DisableCompression:    original.DisableCompression,
-		MaxIdleConnsPerHost:   original.MaxIdleConnsPerHost,
-		MaxConnsPerHost:       original.MaxConnsPerHost,
-		WriteBufferSize:       original.WriteBufferSize,
-		ReadBufferSize:        original.ReadBufferSize,
-	}
-}
+	// Clone the request to avoid mutating the original
+	reqCopy := req.Clone(req.Context())
+	token.SetAuthHeader(reqCopy)
 
-func cloneTLSConfig(original *tls.Config) *tls.Config {
-	if original == nil {
-		return nil
-	}
-
-	return &tls.Config{
-		InsecureSkipVerify:       original.InsecureSkipVerify,
-		MinVersion:               original.MinVersion,
-		MaxVersion:               original.MaxVersion,
-		CipherSuites:             original.CipherSuites,
-		PreferServerCipherSuites: original.PreferServerCipherSuites,
-		NextProtos:               original.NextProtos,
-		ServerName:               original.ServerName,
-		ClientAuth:               original.ClientAuth,
-		RootCAs:                  original.RootCAs,
-		// Deep copy the rest of the TLS fields as needed
-	}
+	return t.base.RoundTrip(reqCopy)
 }

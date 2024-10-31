@@ -141,6 +141,7 @@ type CommandAuthConfig struct {
 
 	// HttpClient is the http Client to be used for authentication to Keyfactor Command API
 	HttpClient *http.Client
+	//DefaultHttpClient *http.Client
 }
 
 // cleanHostName cleans the hostname for authentication to Keyfactor Command API.
@@ -275,8 +276,6 @@ func (c *CommandAuthConfig) ValidateAuthConfig() error {
 		// check if CommandCACert is set in environment
 		if caCert, ok := os.LookupEnv(EnvKeyfactorCACert); ok {
 			c.CommandCACert = caCert
-		} else {
-			return nil
 		}
 	}
 
@@ -284,46 +283,17 @@ func (c *CommandAuthConfig) ValidateAuthConfig() error {
 	if skipVerify, ok := os.LookupEnv(EnvKeyfactorSkipVerify); ok {
 		c.SkipVerify = skipVerify == "true" || skipVerify == "1"
 	}
-
-	//TODO: This should be part of BuildTransport
-	//if c.SkipVerify {
-	//	c.HttpClient.Transport = &http.Transport{
-	//		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-	//	}
-	//	//return nil
-	//}
-	//
-	//caErr := c.updateCACerts()
-	//if caErr != nil {
-	//	return caErr
-	//}
-
 	return nil
 }
 
 // BuildTransport creates a custom http Transport for authentication to Keyfactor Command API.
 func (c *CommandAuthConfig) BuildTransport() (*http.Transport, error) {
-	var output *http.Transport
-	if c.HttpClient == nil {
-		c.SetClient(nil)
-	}
-	// check if c already has a transport and if it does, assign it to output else create a new transport
-	if c.HttpClient.Transport != nil {
-		if transport, ok := c.HttpClient.Transport.(*http.Transport); ok {
-			output = transport
-		} else {
-			output = &http.Transport{
-				TLSClientConfig: &tls.Config{},
-			}
-		}
-	} else {
-		output = &http.Transport{
-			Proxy: http.ProxyFromEnvironment,
-			TLSClientConfig: &tls.Config{
-				Renegotiation: tls.RenegotiateOnceAsClient,
-			},
-			TLSHandshakeTimeout: 10 * time.Second,
-		}
+	output := http.Transport{
+		Proxy: http.ProxyFromEnvironment,
+		TLSClientConfig: &tls.Config{
+			Renegotiation: tls.RenegotiateOnceAsClient,
+		},
+		TLSHandshakeTimeout: 10 * time.Second,
 	}
 
 	if c.SkipVerify {
@@ -331,10 +301,28 @@ func (c *CommandAuthConfig) BuildTransport() (*http.Transport, error) {
 	}
 
 	if c.CommandCACert != "" {
-		_ = c.updateCACerts()
+		if _, err := os.Stat(c.CommandCACert); err == nil {
+			cert, ioErr := os.ReadFile(c.CommandCACert)
+			if ioErr != nil {
+				return &output, ioErr
+			}
+			// check if output.TLSClientConfig.RootCAs is nil
+			if output.TLSClientConfig.RootCAs == nil {
+				output.TLSClientConfig.RootCAs = x509.NewCertPool()
+			}
+			// Append your custom cert to the pool
+			if ok := output.TLSClientConfig.RootCAs.AppendCertsFromPEM(cert); !ok {
+				return &output, fmt.Errorf("failed to append custom CA cert to pool")
+			}
+		} else {
+			// Append your custom cert to the pool
+			if ok := output.TLSClientConfig.RootCAs.AppendCertsFromPEM([]byte(c.CommandCACert)); !ok {
+				return &output, fmt.Errorf("failed to append custom CA cert to pool")
+			}
+		}
 	}
 
-	return output, nil
+	return &output, nil
 }
 
 // SetClient sets the http Client for authentication to Keyfactor Command API.
@@ -343,8 +331,34 @@ func (c *CommandAuthConfig) SetClient(client *http.Client) *http.Client {
 		c.HttpClient = client
 	}
 	if c.HttpClient == nil {
-		c.HttpClient = http.DefaultClient
+		//// Copy the default transport and apply the custom TLS config
+		//defaultTransport := http.DefaultTransport.(*http.Transport).Clone()
+		////defaultTransport.TLSClientConfig = tlsConfig
+		//c.HttpClient = &http.Client{Transport: defaultTransport}
+		defaultTimeout := time.Duration(c.HttpClientTimeout) * time.Second
+		c.HttpClient = &http.Client{
+			Transport: &http.Transport{
+				Proxy: http.ProxyFromEnvironment,
+				TLSClientConfig: &tls.Config{
+					Renegotiation: tls.RenegotiateOnceAsClient,
+				},
+				TLSHandshakeTimeout:    defaultTimeout,
+				DisableKeepAlives:      false,
+				DisableCompression:     false,
+				MaxIdleConns:           10,
+				MaxIdleConnsPerHost:    10,
+				MaxConnsPerHost:        10,
+				IdleConnTimeout:        defaultTimeout,
+				ResponseHeaderTimeout:  defaultTimeout,
+				ExpectContinueTimeout:  defaultTimeout,
+				MaxResponseHeaderBytes: 0,
+				WriteBufferSize:        0,
+				ReadBufferSize:         0,
+				ForceAttemptHTTP2:      false,
+			},
+		}
 	}
+
 	return c.HttpClient
 }
 
@@ -356,6 +370,7 @@ func (c *CommandAuthConfig) updateCACerts() error {
 		if caCert, ok := os.LookupEnv(EnvKeyfactorCACert); ok {
 			c.CommandCACert = caCert
 		} else {
+			// nothing to do
 			return nil
 		}
 	}
@@ -452,7 +467,6 @@ func (c *CommandAuthConfig) Authenticate() error {
 	}
 
 	c.HttpClient.Timeout = time.Duration(c.HttpClientTimeout) * time.Second
-
 	cResp, cErr := c.HttpClient.Do(req)
 	if cErr != nil {
 		return cErr
@@ -645,7 +659,7 @@ func (c *CommandAuthConfig) LoadConfig(profile string, configFilePath string, si
 	if c.CommandCACert == "" {
 		c.CommandCACert = server.CACertPath
 	}
-	if c.SkipVerify {
+	if !c.SkipVerify {
 		c.SkipVerify = server.SkipTLSVerify
 	}
 
