@@ -118,6 +118,7 @@ terraform.rc
 # https://github.com/github/gitignore/blob/main/community/Golang/Go.AllowList.gitignore
 #
 # Binaries for programs and plugins
+.idea
 *.exe
 *.exe~
 *.dll
@@ -131,9 +132,12 @@ terraform.rc
 *.out
 
 # Dependency directories (remove the comment below to include it)
-# vendor/
+vendor/
 
-# Go workspace file
-go.work
+.env*
 
-*.env*
+*.csv
+/.vs/**/*
+/.vscode/**/*
+.DS_Store
+.auto.tfvars
