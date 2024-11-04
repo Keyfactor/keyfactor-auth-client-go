@@ -1,0 +1,153 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "title": "Keyfactor Command API Client Configuration",
+  "description": "Configuration file schema for authenticating to the Keyfactor Command API",
+  "properties": {
+    "servers": {
+      "type": "object",
+      "patternProperties": {
+        "^[a-zA-Z0-9_-]+$": {
+          "type": "object",
+          "properties": {
+            "host": {
+              "type": "string",
+              "description": "The hostname of the Keyfactor Command API server"
+            },
+            "auth_port": {
+              "type": "integer",
+              "description": "The port of the Keyfactor Command API server"
+            },
+            "username": {
+              "type": "string",
+              "description": "The username to authenticate with using basic auth"
+            },
+            "password": {
+              "type": "string",
+              "description": "The password to authenticate with using basic auth"
+            },
+            "client_id": {
+              "type": "string",
+              "description": "The client ID to authenticate with using OAuth2"
+            },
+            "token_url": {
+              "type": "string",
+              "description": "The token URL to authenticate with using OAuth2"
+            },
+            "client_secret": {
+              "type": "string",
+              "description": "The client secret to authenticate with using OAuth2"
+            },
+            "domain": {
+              "type": "string",
+              "description": "The Active Directory domain to authenticate with using basic auth"
+            },
+            "api_path": {
+              "type": "string",
+              "description": "The path to the Keyfactor Command API",
+              "default": "KeyfactorAPI"
+            },
+            "auth_provider": {
+              "type": "object",
+              "description": "The auth provider configuration",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "enum": [
+                    "azid",
+                    "akv"
+                  ]
+                },
+                "profile": {
+                  "type": "string",
+                  "description": "The profile to use in the auth provider configuration"
+                },
+                "parameters": {
+                  "type": "object",
+                  "description": "The parameters to use in the auth provider configuration",
+                  "properties": {
+                    "secret_name": {
+                      "type": "string",
+                      "description": "The name of the secret to use in the Azure KeyVault auth provider configuration"
+                    },
+                    "vault_name": {
+                      "type": "string",
+                      "description": "The name of the vault to use in the Azure KeyVault auth provider configuration"
+                    }
+                  },
+                  "required": []
+                }
+              },
+              "required": [
+                "type",
+                "profile",
+                "parameters"
+              ]
+            }
+          },
+          "oneOf": [
+            {
+              "required": [
+                "username",
+                "password"
+              ],
+              "not": {
+                "required": [
+                  "client_id",
+                  "client_secret"
+                ]
+              }
+            },
+            {
+              "required": [
+                "client_id",
+                "client_secret",
+                "token_url"
+              ],
+              "not": {
+                "required": [
+                  "username",
+                  "password"
+                ]
+              }
+            }
+          ],
+          "if": {
+            "required": [
+              "auth_provider"
+            ]
+          },
+          "then": {
+            "required": [
+              "auth_provider"
+            ]
+          },
+          "else": {
+            "if": {
+              "required": [
+                "client_id",
+                "client_secret"
+              ]
+            },
+            "then": {
+              "required": [
+                "token_url",
+                "host"
+              ]
+            },
+            "else": {
+              "required": [
+                "host"
+              ]
+            }
+          }
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "servers"
+  ],
+  "additionalProperties": false
+}
