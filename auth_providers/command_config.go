@@ -186,23 +186,53 @@ func WriteConfigToYAML(filePath string, config *Config) error {
 	return nil
 }
 
+func (c *Config) Compare(other *Config) bool {
+	if len(c.Servers) != len(other.Servers) {
+		return false
+	}
+
+	for key, server := range c.Servers {
+		if otherServer, exists := other.Servers[key]; !exists || !server.Compare(&otherServer) {
+			return false
+		}
+	}
+
+	return true
+}
+
+func (s *Server) Compare(other *Server) bool {
+	return s.Host == other.Host &&
+		s.Port == other.Port &&
+		s.Username == other.Username &&
+		s.Password == other.Password &&
+		s.Domain == other.Domain &&
+		s.ClientID == other.ClientID &&
+		s.ClientSecret == other.ClientSecret &&
+		s.OAuthTokenUrl == other.OAuthTokenUrl &&
+		s.APIPath == other.APIPath &&
+		s.SkipTLSVerify == other.SkipTLSVerify &&
+		s.CACertPath == other.CACertPath &&
+		s.AuthType == other.AuthType
+}
+
 // MergeConfigFromFile merges the configuration from a file into the existing Config.
-func MergeConfigFromFile(filePath string, config *Config) error {
+func MergeConfigFromFile(filePath string, config *Config) (*Config, error) {
 	// Read the file content
 	data, err := os.ReadFile(filePath)
 	if err != nil {
-		return fmt.Errorf("failed to read config file: %w", err)
+
+		return nil, fmt.Errorf("failed to read config file: %w", err)
 	}
 
 	// Determine the file type (JSON or YAML) and unmarshal accordingly
 	var tempConfig Config
 	if json.Valid(data) {
 		if err := json.Unmarshal(data, &tempConfig); err != nil {
-			return fmt.Errorf("failed to unmarshal JSON config: %w", err)
+			return nil, fmt.Errorf("failed to unmarshal JSON config: %w", err)
 		}
 	} else {
 		if err := yaml.Unmarshal(data, &tempConfig); err != nil {
-			return fmt.Errorf("failed to unmarshal YAML config: %w", err)
+			return nil, fmt.Errorf("failed to unmarshal YAML config: %w", err)
 		}
 	}
 
@@ -213,7 +243,7 @@ func MergeConfigFromFile(filePath string, config *Config) error {
 		}
 	}
 
-	return nil
+	return config, nil
 }
 
 // GetAuthType returns the type of authentication to use based on the configuration params.
