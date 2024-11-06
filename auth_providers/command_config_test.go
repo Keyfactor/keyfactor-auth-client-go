@@ -181,7 +181,7 @@ func TestMergeConfigFromFile(t *testing.T) {
 		},
 	}
 
-	err = auth_providers.MergeConfigFromFile(filePath, newConfig)
+	_, err = auth_providers.MergeConfigFromFile(filePath, newConfig)
 	if err != nil {
 		t.Fatalf("failed to merge config from file: %v", err)
 	}
