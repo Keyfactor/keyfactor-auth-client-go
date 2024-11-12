@@ -288,12 +288,19 @@ func (c *CommandAuthConfig) ValidateAuthConfig() error {
 
 // BuildTransport creates a custom http Transport for authentication to Keyfactor Command API.
 func (c *CommandAuthConfig) BuildTransport() (*http.Transport, error) {
+	defaultTimeout := time.Duration(c.HttpClientTimeout) * time.Second
 	output := http.Transport{
 		Proxy: http.ProxyFromEnvironment,
 		TLSClientConfig: &tls.Config{
 			Renegotiation: tls.RenegotiateOnceAsClient,
 		},
-		TLSHandshakeTimeout: 10 * time.Second,
+		TLSHandshakeTimeout:   defaultTimeout,
+		ResponseHeaderTimeout: defaultTimeout,
+		IdleConnTimeout:       defaultTimeout,
+		ExpectContinueTimeout: defaultTimeout,
+		MaxIdleConns:          10,
+		MaxIdleConnsPerHost:   10,
+		MaxConnsPerHost:       10,
 	}
 
 	if c.SkipVerify {
