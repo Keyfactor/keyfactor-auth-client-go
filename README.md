@@ -19,7 +19,7 @@ Client library for authenticating to Keyfactor Command.
 
 ### Basic Auth
 
-Currently, only `Basic` authentication auth via `Active Directory` is supported.
+Currently, only `Basic` authentication via `Active Directory` is supported.
 
 | Name               | Description                                                                                 | Default |
 |--------------------|---------------------------------------------------------------------------------------------|---------|
