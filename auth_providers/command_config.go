@@ -32,6 +32,8 @@ type Server struct {
 	Domain        string       `json:"domain,omitempty" yaml:"domain,omitempty"`                   // Domain is the domain for authentication.
 	ClientID      string       `json:"client_id,omitempty" yaml:"client_id,omitempty"`             // ClientID is the client ID for OAuth.
 	ClientSecret  string       `json:"client_secret,omitempty" yaml:"client_secret,omitempty"`     // ClientSecret is the client secret for OAuth.
+	Scopes        []string     `json:"scopes,omitempty" yaml:"scopes,omitempty"`                   // Scopes is the OAuth scopes.
+	Audience      string       `json:"audience,omitempty" yaml:"audience,omitempty"`               // Audience is the OAuth audience.
 	OAuthTokenUrl string       `json:"token_url,omitempty" yaml:"token_url,omitempty"`             // OAuthTokenUrl is full URL for OAuth token request endpoint.
 	APIPath       string       `json:"api_path,omitempty" yaml:"api_path,omitempty"`               // APIPath is the API path.
 	AuthProvider  AuthProvider `json:"auth_provider,omitempty" yaml:"auth_provider,omitempty"`     // AuthProvider contains the authentication provider details.

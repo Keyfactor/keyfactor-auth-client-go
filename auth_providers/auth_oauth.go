@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"golang.org/x/oauth2"
@@ -42,6 +43,11 @@ const (
 	EnvAuthCACert = "KEYFACTOR_AUTH_CA_CERT"
 )
 
+var (
+	// DefaultScopes is the default scopes for Keyfactor authentication
+	DefaultScopes = []string{"openid"}
+)
+
 // OAuth Authenticator
 var _ Authenticator = &OAuthAuthenticator{}
 
@@ -65,40 +71,40 @@ type CommandConfigOauth struct {
 	// CommandAuthConfig is a reference to the base configuration needed for authentication to Keyfactor Command API
 	CommandAuthConfig
 
-	// ClientID is the Client ID for Keycloak authentication
+	// ClientID is the Client ID for OAuth authentication
 	ClientID string `json:"client_id,omitempty"`
 
-	// ClientSecret is the Client secret for Keycloak authentication
+	// ClientSecret is the Client secret for OAuth authentication
 	ClientSecret string `json:"client_secret,omitempty"`
 
-	// Audience is the audience for Keycloak authentication
+	// Audience is the audience for OAuth authentication
 	Audience string `json:"audience,omitempty"`
 
-	// Scopes is the scopes for Keycloak authentication
+	// Scopes is the scopes for OAuth authentication
 	Scopes []string `json:"scopes,omitempty"`
 
-	// CACertificatePath is the path to the CA certificate for Keycloak authentication
+	// CACertificatePath is the path to the CA certificate for OAuth authentication
 	CACertificatePath string `json:"idp_ca_cert,omitempty"`
 
 	// CACertificates is the CA certificates for authentication
 	CACertificates []*x509.Certificate `json:"-"`
 
-	// AccessToken is the access token for Keycloak authentication
+	// AccessToken is the access token for OAuth authentication
 	AccessToken string `json:"access_token,omitempty"`
 
-	// RefreshToken is the refresh token for Keycloak authentication
+	// RefreshToken is the refresh token for OAuth authentication
 	RefreshToken string `json:"refresh_token,omitempty"`
 
 	// Expiry is the expiry time of the access token
 	Expiry time.Time `json:"expiry,omitempty"`
 
-	// TokenURL is the token URL for Keycloak authentication
+	// TokenURL is the token URL for OAuth authentication
 	TokenURL string `json:"token_url,omitempty"`
 
 	//// AuthPort
 	//AuthPort string `json:"auth_port,omitempty"`
 
-	//// AuthType is the type of Keycloak auth to use such as client_credentials, password, etc.
+	//// AuthType is the type of OAuth auth to use such as client_credentials, password, etc.
 	//AuthType string `json:"auth_type,omitempty"`
 }
 
@@ -107,49 +113,49 @@ func NewOAuthAuthenticatorBuilder() *CommandConfigOauth {
 	return &CommandConfigOauth{}
 }
 
-// WithClientId sets the Client ID for Keycloak authentication.
+// WithClientId sets the Client ID for OAuth authentication.
 func (b *CommandConfigOauth) WithClientId(clientId string) *CommandConfigOauth {
 	b.ClientID = clientId
 	return b
 }
 
-// WithClientSecret sets the Client secret for Keycloak authentication.
+// WithClientSecret sets the Client secret for OAuth authentication.
 func (b *CommandConfigOauth) WithClientSecret(clientSecret string) *CommandConfigOauth {
 	b.ClientSecret = clientSecret
 	return b
 }
 
-// WithTokenUrl sets the token URL for Keycloak authentication.
+// WithTokenUrl sets the token URL for OAuth authentication.
 func (b *CommandConfigOauth) WithTokenUrl(tokenUrl string) *CommandConfigOauth {
 	b.TokenURL = tokenUrl
 	return b
 }
 
-// WithScopes sets the scopes for Keycloak authentication.
+// WithScopes sets the scopes for OAuth authentication.
 func (b *CommandConfigOauth) WithScopes(scopes []string) *CommandConfigOauth {
 	b.Scopes = scopes
 	return b
 }
 
-// WithAudience sets the audience for Keycloak authentication.
+// WithAudience sets the audience for OAuth authentication.
 func (b *CommandConfigOauth) WithAudience(audience string) *CommandConfigOauth {
 	b.Audience = audience
 	return b
 }
 
-// WithCaCertificatePath sets the CA certificate path for Keycloak authentication.
+// WithCaCertificatePath sets the CA certificate path for OAuth authentication.
 func (b *CommandConfigOauth) WithCaCertificatePath(caCertificatePath string) *CommandConfigOauth {
 	b.CACertificatePath = caCertificatePath
 	return b
 }
 
-// WithCaCertificates sets the CA certificates for Keycloak authentication.
+// WithCaCertificates sets the CA certificates for OAuth authentication.
 func (b *CommandConfigOauth) WithCaCertificates(caCertificates []*x509.Certificate) *CommandConfigOauth {
 	b.CACertificates = caCertificates
 	return b
 }
 
-// WithAccessToken sets the access token for Keycloak authentication.
+// WithAccessToken sets the access token for OAuth authentication.
 func (b *CommandConfigOauth) WithAccessToken(accessToken string) *CommandConfigOauth {
 	if accessToken != "" {
 		b.AccessToken = accessToken
@@ -196,8 +202,14 @@ func (b *CommandConfigOauth) GetHttpClient() (*http.Client, error) {
 		Scopes:       b.Scopes,
 	}
 
+	if b.Audience != "" {
+		config.EndpointParams = map[string][]string{
+			"audience": {b.Audience},
+		}
+	}
+
 	if len(b.Scopes) == 0 {
-		b.Scopes = []string{"openid", "profile", "email"}
+		b.Scopes = DefaultScopes
 	}
 
 	if b.Audience != "" {
@@ -264,13 +276,13 @@ func (b *CommandConfigOauth) LoadConfig(profile, path string, silentLoad bool) (
 		//	b.AccessToken = serverConfig.AccessToken
 		//}
 
-		//if b.Audience == "" {
-		//	b.Audience = serverConfig.Audience
-		//}
-		//
-		//if b.Scopes == nil || len(b.Scopes) == 0 {
-		//	b.Scopes = serverConfig.Scopes
-		//}
+		if b.Audience == "" {
+			b.Audience = serverConfig.Audience
+		}
+
+		if b.Scopes == nil || len(b.Scopes) == 0 {
+			b.Scopes = serverConfig.Scopes
+		}
 
 		if b.CACertificatePath == "" {
 			b.CACertificatePath = serverConfig.CACertPath
@@ -350,6 +362,29 @@ func (b *CommandConfigOauth) ValidateAuthConfig() error {
 		}
 	}
 
+	if b.Audience == "" {
+		if audience, ok := os.LookupEnv(EnvKeyfactorAuthAudience); ok {
+			b.Audience = audience
+		} else {
+			if serverConfig != nil && serverConfig.Audience != "" {
+				b.Audience = serverConfig.Audience
+			}
+		}
+	}
+
+	if b.Scopes == nil || len(b.Scopes) == 0 {
+		if scopes, ok := os.LookupEnv(EnvKeyfactorAuthScopes); ok {
+			// split the scopes by comma
+			b.Scopes = strings.Split(scopes, ",")
+		} else {
+			if serverConfig != nil && len(serverConfig.Scopes) > 0 {
+				b.Scopes = serverConfig.Scopes
+			} else {
+				b.Scopes = DefaultScopes
+			}
+		}
+	}
+
 	return b.CommandAuthConfig.ValidateAuthConfig()
 }
 
@@ -391,6 +426,8 @@ func (b *CommandConfigOauth) GetServerConfig() *Server {
 		ClientSecret:  b.ClientSecret,
 		OAuthTokenUrl: b.TokenURL,
 		APIPath:       b.CommandAPIPath,
+		Scopes:        b.Scopes,
+		Audience:      b.Audience,
 		//AuthProvider:  AuthProvider{},
 		SkipTLSVerify: b.SkipVerify,
 		CACertPath:    b.CommandCACert,

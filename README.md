@@ -1,22 +1,6 @@
 # keyfactor-auth-client-go
 
-Client library for authenticating to Keyfactor Command
-
-<!-- toc -->
-
-- [Environment Variables](#environment-variables)
-    * [Global](#global)
-    * [Basic Auth](#basic-auth)
-    * [oAuth Client Credentials](#oauth-client-credentials)
-- [Configuration File](#configuration-file)
-    * [Basic Auth](#basic-auth)
-    * [oAuth Client Credentials](#oauth-client-credentials)
-    * [Auth Providers](#auth-providers)
-        + [Azure Id](#azure-id)
-        + [Azure KeyVault](#azure-keyvault)
-- [Test Environment Variables](#test-environment-variables)
-
-<!-- tocstop -->
+Client library for authenticating to Keyfactor Command.
 
 ## Environment Variables
 
@@ -35,7 +19,7 @@ Client library for authenticating to Keyfactor Command
 
 ### Basic Auth
 
-Currently, only Active Directory `Basic` authentication is supported.
+Currently, only `Basic` authentication auth via `Active Directory` is supported.
 
 | Name               | Description                                                                                 | Default |
 |--------------------|---------------------------------------------------------------------------------------------|---------|
@@ -50,7 +34,8 @@ Currently, only Active Directory `Basic` authentication is supported.
 | KEYFACTOR_AUTH_CLIENT_ID     | Keyfactor Auth Client ID                                                                                                        |          |
 | KEYFACTOR_AUTH_CLIENT_SECRET | Keyfactor Auth Client Secret                                                                                                    |          |
 | KEYFACTOR_AUTH_TOKEN_URL     | URL to request an access token from Keyfactor Auth                                                                              |          |
-| KEYFACTOR_AUTH_SCOPES        | Scopes to request when authenticating to Keyfactor Command API                                                                  | `openid` |
+| KEYFACTOR_AUTH_SCOPES        | Scopes to request when authenticating to Keyfactor Command API. Each scope MUST be separated by `,`                             | `openid` |
+| KEYFACTOR_AUTH_AUDIENCE      | Audience to request when authenticating to Keyfactor Command API                                                                |          |
 | KEYFACTOR_AUTH_ACCESS_TOKEN  | Access token to use to authenticate to Keyfactor Command API. This can be supplied directly or generated via client credentials |          |
 | KEYFACTOR_AUTH_CA_CERT       | Either a file path or PEM encoded string to a CA certificate to use when connecting to Keyfactor Auth                           |          |
 
@@ -64,14 +49,17 @@ These environment variables are used to run go tests. They are not used in the a
 | TEST_KEYFACTOR_KC_AUTH | Set to `true` to test Keycloak authentication         | false   |
 
 ## Configuration File
-A JSON or YAML file can be used to store authentication configuration. A configuration file can contain references to 
-multiple Keyfactor Command environments and can be referenced by a `profile` name. The `default` profile will be used 
-when no profile is specified. Keyfactor tools will look for a config file located at `$HOME/.keyfactor/command_config.json`
+
+A JSON or YAML file can be used to store authentication configuration. A configuration file can contain references to
+multiple Keyfactor Command environments and can be referenced by a `profile` name. The `default` profile will be used
+when no profile is specified. Keyfactor tools will look for a config file located at
+`$HOME/.keyfactor/command_config.json`
 by default. The config file should be structured as follows:
 
 ### Basic Auth
 
 #### JSON
+
 ```json
 {
   "servers": {
@@ -94,6 +82,7 @@ by default. The config file should be structured as follows:
 ```
 
 #### YAML
+
 ```yaml
 servers:
   default:
@@ -113,6 +102,7 @@ servers:
 ### oAuth Client Credentials
 
 #### JSON
+
 ```json
 {
   "servers": {
@@ -121,6 +111,12 @@ servers:
       "token_url": "https://idp.keyfactor.command.kfdelivery.com/oauth2/token",
       "client_id": "client-id",
       "client_secret": "client-secret",
+      "audience": "https://keyfactor.command.kfdelivery.com",
+      "scopes": [
+        "openid",
+        "profile",
+        "email"
+      ],
       "api_path": "KeyfactorAPI"
     },
     "server2": {
@@ -135,6 +131,7 @@ servers:
 ```
 
 #### YAML
+
 ```yaml
 servers:
   default:
@@ -143,6 +140,11 @@ servers:
     client_id: client-id
     client_secret: client-secret
     api_path: KeyfactorAPI
+    audience: https://keyfactor.command.kfdelivery.com
+    scopes:
+      - openid
+      - profile
+      - email
   server2:
     host: keyfactor.command.kfdelivery.com
     token_url: https://idp.keyfactor.command.kfdelivery.com/oauth2/token
