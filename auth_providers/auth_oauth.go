@@ -72,40 +72,34 @@ type CommandConfigOauth struct {
 	CommandAuthConfig
 
 	// ClientID is the Client ID for OAuth authentication
-	ClientID string `json:"client_id,omitempty"`
+	ClientID string `json:"client_id,omitempty" yaml:"client_id,omitempty"`
 
 	// ClientSecret is the Client secret for OAuth authentication
-	ClientSecret string `json:"client_secret,omitempty"`
+	ClientSecret string `json:"client_secret,omitempty" yaml:"client_secret,omitempty"`
 
 	// Audience is the audience for OAuth authentication
-	Audience string `json:"audience,omitempty"`
+	Audience string `json:"audience,omitempty" yaml:"audience,omitempty"`
 
 	// Scopes is the scopes for OAuth authentication
-	Scopes []string `json:"scopes,omitempty"`
+	Scopes []string `json:"scopes,omitempty" yaml:"scopes,omitempty"`
 
 	// CACertificatePath is the path to the CA certificate for OAuth authentication
-	CACertificatePath string `json:"idp_ca_cert,omitempty"`
+	CACertificatePath string `json:"idp_ca_cert,omitempty" yaml:"idp_ca_cert,omitempty"`
 
 	// CACertificates is the CA certificates for authentication
 	CACertificates []*x509.Certificate `json:"-"`
 
 	// AccessToken is the access token for OAuth authentication
-	AccessToken string `json:"access_token,omitempty"`
+	AccessToken string `json:"access_token,omitempty" yaml:"access_token,omitempty"`
 
 	// RefreshToken is the refresh token for OAuth authentication
-	RefreshToken string `json:"refresh_token,omitempty"`
+	RefreshToken string `json:"refresh_token,omitempty" yaml:"refresh_token,omitempty"`
 
 	// Expiry is the expiry time of the access token
-	Expiry time.Time `json:"expiry,omitempty"`
+	Expiry time.Time `json:"expiry,omitempty" yaml:"expiry,omitempty"`
 
 	// TokenURL is the token URL for OAuth authentication
-	TokenURL string `json:"token_url,omitempty"`
-
-	//// AuthPort
-	//AuthPort string `json:"auth_port,omitempty"`
-
-	//// AuthType is the type of OAuth auth to use such as client_credentials, password, etc.
-	//AuthType string `json:"auth_type,omitempty"`
+	TokenURL string `json:"token_url,omitempty" yaml:"token_url,omitempty"`
 }
 
 // NewOAuthAuthenticatorBuilder creates a new CommandConfigOauth instance.
@@ -372,7 +366,7 @@ func (b *CommandConfigOauth) ValidateAuthConfig() error {
 		}
 	}
 
-	if b.Scopes == nil || len(b.Scopes) == 0 {
+	if len(b.Scopes) == 0 {
 		if scopes, ok := os.LookupEnv(EnvKeyfactorAuthScopes); ok {
 			// split the scopes by comma
 			b.Scopes = strings.Split(scopes, ",")
@@ -424,6 +418,7 @@ func (b *CommandConfigOauth) GetServerConfig() *Server {
 		Port:          b.CommandPort,
 		ClientID:      b.ClientID,
 		ClientSecret:  b.ClientSecret,
+		AccessToken:   b.AccessToken,
 		OAuthTokenUrl: b.TokenURL,
 		APIPath:       b.CommandAPIPath,
 		Scopes:        b.Scopes,
