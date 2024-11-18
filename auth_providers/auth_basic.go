@@ -194,8 +194,8 @@ func (a *CommandAuthConfigBasic) Authenticate() error {
 		return cErr
 	}
 
-	// create oauth Client
-	authy, err := NewBasicAuthAuthenticatorBuilder().
+	// create Basic Client
+	authy, err := a.
 		WithUsername(a.Username).
 		WithPassword(a.Password).
 		WithDomain(a.Domain).

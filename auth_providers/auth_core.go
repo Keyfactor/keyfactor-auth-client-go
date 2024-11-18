@@ -731,6 +731,8 @@ func (c *CommandAuthConfig) GetServerConfig() *Server {
 	return &server
 }
 
+type contextKey string
+
 // Example usage of CommandAuthConfig
 //
 // This example demonstrates how to use CommandAuthConfig to authenticate to the Keyfactor Command API.
