@@ -24,14 +24,14 @@ import (
 
 // Server represents the server configuration for authentication.
 type Server struct {
-	Host string `json:"host,omitempty" yaml:"host,omitempty"` // Host is the Command server DNS name or IP address.
-	Port int    `json:"port,omitempty" yaml:"port,omitempty"` // Port is the Command server port.
-	//AuthPort      int          `json:"auth_port,omitempty" yaml:"auth_port,omitempty"`             // AuthPort is the authentication port.
+	Host          string       `json:"host,omitempty" yaml:"host,omitempty"`                       // Host is the Command server DNS name or IP address.
+	Port          int          `json:"port,omitempty" yaml:"port,omitempty"`                       // Port is the Command server port.
 	Username      string       `json:"username,omitempty" yaml:"username,omitempty"`               // Username is the username for authentication.
 	Password      string       `json:"password,omitempty" yaml:"password,omitempty"`               // Password is the password for authentication.
 	Domain        string       `json:"domain,omitempty" yaml:"domain,omitempty"`                   // Domain is the domain for authentication.
 	ClientID      string       `json:"client_id,omitempty" yaml:"client_id,omitempty"`             // ClientID is the client ID for OAuth.
 	ClientSecret  string       `json:"client_secret,omitempty" yaml:"client_secret,omitempty"`     // ClientSecret is the client secret for OAuth.
+	AccessToken   string       `json:"access_token,omitempty" yaml:"access_token,omitempty"`       // AccessToken is the OAuth access token.
 	Scopes        []string     `json:"scopes,omitempty" yaml:"scopes,omitempty"`                   // Scopes is the OAuth scopes.
 	Audience      string       `json:"audience,omitempty" yaml:"audience,omitempty"`               // Audience is the OAuth audience.
 	OAuthTokenUrl string       `json:"token_url,omitempty" yaml:"token_url,omitempty"`             // OAuthTokenUrl is full URL for OAuth token request endpoint.
@@ -96,9 +96,9 @@ func ReadConfigFromYAML(filePath string) (*Config, error) {
 
 // ReadServerFromJSON reads a Server configuration from a JSON file.
 func ReadServerFromJSON(filePath string) (*Server, error) {
-	file, err := os.Open(filePath)
-	if err != nil {
-		return nil, err
+	file, fErr := os.Open(filePath)
+	if fErr != nil {
+		return nil, fErr
 	}
 	defer file.Close()
 
@@ -113,9 +113,9 @@ func ReadServerFromJSON(filePath string) (*Server, error) {
 
 // WriteServerToJSON writes a Server configuration to a JSON file.
 func WriteServerToJSON(filePath string, server *Server) error {
-	file, err := os.Create(filePath)
-	if err != nil {
-		return err
+	file, fErr := os.Create(filePath)
+	if fErr != nil {
+		return fErr
 	}
 	defer file.Close()
 
@@ -130,9 +130,9 @@ func WriteServerToJSON(filePath string, server *Server) error {
 
 // ReadServerFromYAML reads a Server configuration from a YAML file.
 func ReadServerFromYAML(filePath string) (*Server, error) {
-	file, err := os.ReadFile(filePath)
-	if err != nil {
-		return nil, err
+	file, fErr := os.ReadFile(filePath)
+	if fErr != nil {
+		return nil, fErr
 	}
 
 	var server Server
@@ -145,9 +145,9 @@ func ReadServerFromYAML(filePath string) (*Server, error) {
 
 // WriteServerToYAML writes a Server configuration to a YAML file.
 func WriteServerToYAML(filePath string, server *Server) error {
-	data, err := yaml.Marshal(server)
-	if err != nil {
-		return err
+	data, fErr := yaml.Marshal(server)
+	if fErr != nil {
+		return fErr
 	}
 
 	if err := os.WriteFile(filePath, data, 0644); err != nil {
@@ -159,9 +159,9 @@ func WriteServerToYAML(filePath string, server *Server) error {
 
 // WriteConfigToJSON writes a Config configuration to a JSON file.
 func WriteConfigToJSON(filePath string, config *Config) error {
-	file, err := os.Create(filePath)
-	if err != nil {
-		return err
+	file, fErr := os.Create(filePath)
+	if fErr != nil {
+		return fErr
 	}
 	defer file.Close()
 
@@ -176,9 +176,9 @@ func WriteConfigToJSON(filePath string, config *Config) error {
 
 // WriteConfigToYAML writes a Config configuration to a YAML file.
 func WriteConfigToYAML(filePath string, config *Config) error {
-	data, err := yaml.Marshal(config)
-	if err != nil {
-		return err
+	data, fErr := yaml.Marshal(config)
+	if fErr != nil {
+		return fErr
 	}
 
 	if err := os.WriteFile(filePath, data, 0644); err != nil {
@@ -210,6 +210,7 @@ func (s *Server) Compare(other *Server) bool {
 		s.Domain == other.Domain &&
 		s.ClientID == other.ClientID &&
 		s.ClientSecret == other.ClientSecret &&
+		s.AccessToken == other.AccessToken &&
 		s.OAuthTokenUrl == other.OAuthTokenUrl &&
 		s.APIPath == other.APIPath &&
 		s.SkipTLSVerify == other.SkipTLSVerify &&
@@ -250,7 +251,7 @@ func MergeConfigFromFile(filePath string, config *Config) (*Config, error) {
 
 // GetAuthType returns the type of authentication to use based on the configuration params.
 func (s *Server) GetAuthType() string {
-	if s.ClientID != "" && s.ClientSecret != "" {
+	if (s.ClientID != "" && s.ClientSecret != "") || s.AccessToken != "" {
 		s.AuthType = "oauth"
 	} else if s.Username != "" && s.Password != "" {
 		s.AuthType = "basic"
@@ -311,6 +312,7 @@ func (s *Server) GetOAuthClientConfig() (*CommandConfigOauth, error) {
 	oauthConfig.
 		WithClientId(s.ClientID).
 		WithClientSecret(s.ClientSecret).
+		WithAccessToken(s.AccessToken).
 		WithTokenUrl(s.OAuthTokenUrl).
 		Build()
 
