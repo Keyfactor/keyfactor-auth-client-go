@@ -152,3 +152,18 @@ servers:
     client_secret: client-secret
     api_path: KeyfactorAPI
 ```
+
+## Configuration File Providers
+
+Below are a list of configuration file providers that can be used to load configuration from a file if loading from disk
+is not desired.
+
+### Azure Key Vault
+
+To use Azure Key Vault as a configuration file provider, the code must either be running in an Azure environment or the
+environment configured with `az login`. The following environment variables will be used when they are not directly set.
+
+| Name                | Description                           | Default |
+|---------------------|---------------------------------------|---------|
+| AZURE_KEYVAULT_NAME | The name of the Azure KeyVault        |         |
+| AZURE_SECRET_NAME   | The name of the Azure KeyVault secret |         |
