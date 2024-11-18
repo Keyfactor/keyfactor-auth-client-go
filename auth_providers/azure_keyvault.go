@@ -18,8 +18,8 @@ const (
 
 // ConfigProviderAzureKeyVault is an Authenticator that uses Azure Key Vault for authentication.
 type ConfigProviderAzureKeyVault struct {
-	SecretName        string `json:"secret_name"`
-	VaultName         string `json:"vault_name"`
+	SecretName        string `json:"secret_name;omitempty" yaml:"secret_name;omitempty"`
+	VaultName         string `json:"vault_name" yaml:"vault_name"`
 	DefaultCredential *azidentity.DefaultAzureCredential
 	CommandConfig     *Config
 	//TenantID       string `json:"tenant_id;omitempty"`

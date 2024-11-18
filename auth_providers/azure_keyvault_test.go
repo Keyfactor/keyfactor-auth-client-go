@@ -1,8 +1,12 @@
 package auth_providers_test
 
 import (
+	"encoding/json"
+	"fmt"
+	"net/http"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/Keyfactor/keyfactor-auth-client-go/auth_providers"
 	"github.com/stretchr/testify/assert"
@@ -70,4 +74,61 @@ func TestConfigProviderAzureKeyVault_Validate(t *testing.T) {
 func unsetAkvEnvVars() {
 	os.Unsetenv(auth_providers.EnvAzureSecretName)
 	os.Unsetenv(auth_providers.EnvAzureVaultName)
+}
+
+func isRunningOnAzureByEnvVar() bool {
+	_, exists := os.LookupEnv("AZURE_REGION")
+	return exists
+}
+
+func isRunningOnAzureByIMDS() bool {
+	client := &http.Client{Timeout: 2 * time.Second}
+	req, err := http.NewRequest("GET", "http://169.254.169.254/metadata/instance?api-version=2021-02-01", nil)
+	if err != nil {
+		return false
+	}
+	req.Header.Set("Metadata", "true")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return false
+	}
+	defer resp.Body.Close()
+
+	return resp.StatusCode == http.StatusOK
+}
+
+func isRunningOnAzureByAgent() bool {
+	_, err := os.Stat("/usr/sbin/waagent")
+	return err == nil
+}
+
+func hasManagedIdentity() (bool, error) {
+	client := &http.Client{Timeout: 2 * time.Second}
+	req, err := http.NewRequest("GET", "http://169.254.169.254/metadata/identity?api-version=2021-02-01", nil)
+	if err != nil {
+		return false, fmt.Errorf("error creating request: %w", err)
+	}
+	req.Header.Set("Metadata", "true")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return false, fmt.Errorf("error making request to IMDS: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return false, nil // No managed identity attached
+	}
+
+	var identityMetadata map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&identityMetadata); err != nil {
+		return false, fmt.Errorf("error decoding identity metadata: %w", err)
+	}
+
+	// Check for the presence of identity-related fields
+	if _, exists := identityMetadata["compute"]; exists {
+		return true, nil
+	}
+	return false, nil
 }
