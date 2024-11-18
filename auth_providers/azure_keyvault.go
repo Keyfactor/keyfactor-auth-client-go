@@ -136,7 +136,7 @@ func (a *ConfigProviderAzureKeyVault) LoadConfigFromAzureKeyVault() (*Config, er
 		var singleServerConfig Server
 		if sjErr := json.Unmarshal([]byte(*secretResp.Value), &singleServerConfig); sjErr == nil {
 			config.Servers = make(map[string]Server)
-			config.Servers["default"] = singleServerConfig
+			config.Servers[DefaultConfigProfile] = singleServerConfig
 		} else {
 			return nil, jErr
 		}
