@@ -13,12 +13,18 @@ import (
 )
 
 func TestConfigProviderAzureKeyVault_Authenticate(t *testing.T) {
+	if isRunningInGithubAction() {
+		t.Skip("Testing via Github Actions not supported, skipping test")
+	}
 	provider := auth_providers.NewConfigProviderAzureKeyVault()
 	err := provider.Authenticate()
 	assert.NoError(t, err, "expected no error during authentication")
 }
 
 func TestConfigProviderAzureKeyVault_LoadConfigFromAzureKeyVault(t *testing.T) {
+	if isRunningInGithubAction() {
+		t.Skip("Testing via Github Actions not supported, skipping test")
+	}
 	vaultName := os.Getenv(auth_providers.EnvAzureVaultName)
 	secretName := os.Getenv(auth_providers.EnvAzureSecretName)
 
@@ -131,4 +137,9 @@ func hasManagedIdentity() (bool, error) {
 		return true, nil
 	}
 	return false, nil
+}
+
+func isRunningInGithubAction() bool {
+	_, exists := os.LookupEnv("GITHUB_RUN_ID")
+	return exists
 }
