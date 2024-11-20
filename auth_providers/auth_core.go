@@ -98,7 +98,7 @@ func (f roundTripperFunc) RoundTrip(req *http.Request) (*http.Response, error) {
 // CommandAuthConfig represents the base configuration needed for authentication to Keyfactor Command API.
 type CommandAuthConfig struct {
 	// ConfigType is the type of configuration
-	ConfigType string `json:"config_type"`
+	ConfigType string `json:"config_type,omitempty" yaml:"config_type,omitempty"`
 
 	//ConfigProfile is the profile of the configuration
 	ConfigProfile string
@@ -110,34 +110,34 @@ type CommandAuthConfig struct {
 	FileConfig *Server
 
 	// AuthHeader is the header to be used for authentication to Keyfactor Command API
-	AuthHeader string `json:"auth_header"`
+	AuthHeader string `json:"auth_header,omitempty" yaml:"auth_header,omitempty"`
 
 	// CommandHostName is the hostname of the Keyfactor Command API
-	CommandHostName string `json:"host"`
+	CommandHostName string `json:"host,omitempty" yaml:"host,omitempty"`
 
 	// CommandPort is the port of the Keyfactor Command API
-	CommandPort int `json:"port"`
+	CommandPort int `json:"port,omitempty" yaml:"port,omitempty"`
 
 	// CommandAPIPath is the path of the Keyfactor Command API, default is "KeyfactorAPI"
-	CommandAPIPath string `json:"api_path"`
+	CommandAPIPath string `json:"api_path,omitempty" yaml:"api_path,omitempty"`
 
 	// CommandAPIVersion is the version of the Keyfactor Command API, default is "1"
-	CommandVersion string `json:"command_version"`
+	CommandVersion string `json:"command_version,omitempty" yaml:"command_version,omitempty"`
 
 	// CommandCACert is the CA certificate to be used for authentication to Keyfactor Command API for use with not widely trusted certificates. This can be a filepath or a string of the certificate in PEM format.
-	CommandCACert string `json:"command_ca_cert"`
+	CommandCACert string `json:"command_ca_cert,omitempty" yaml:"command_ca_cert,omitempty"`
 
 	// SkipVerify is a flag to skip verification of the server's certificate chain and host name. Default is false.
-	SkipVerify bool `json:"skip_verify"`
+	SkipVerify bool `json:"skip_verify,omitempty" yaml:"skip_verify,omitempty"`
 
 	// HttpClientTimeout is the timeout for the http Client
-	HttpClientTimeout int `json:"client_timeout"`
+	HttpClientTimeout int `json:"client_timeout,omitempty" yaml:"client_timeout,omitempty"`
 
 	// UserAgent is the user agent to be used for authentication to Keyfactor Command API
-	UserAgent string `json:"user_agent,omitempty"`
+	UserAgent string `json:"user_agent,omitempty" yaml:"user_agent,omitempty"`
 
 	// Debug
-	Debug bool `json:"debug,omitempty"`
+	Debug bool `json:"debug,omitempty" yaml:"debug,omitempty"`
 
 	// HttpClient is the http Client to be used for authentication to Keyfactor Command API
 	HttpClient *http.Client
@@ -730,6 +730,8 @@ func (c *CommandAuthConfig) GetServerConfig() *Server {
 	}
 	return &server
 }
+
+type contextKey string
 
 // Example usage of CommandAuthConfig
 //
