@@ -1,3 +1,8 @@
+# v1.1.0
+
+## Features
+- Support for sourcing client config files from Azure Key Vault
+
 # v1.0.0
 
 ## Features
