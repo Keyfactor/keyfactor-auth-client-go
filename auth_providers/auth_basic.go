@@ -52,13 +52,13 @@ type CommandAuthConfigBasic struct {
 	CommandAuthConfig
 
 	// Username is the username to be used for authentication to Keyfactor Command API
-	Username string `json:"username,omitempty"`
+	Username string `json:"username,omitempty" yaml:"username,omitempty"`
 
 	// Password is the password to be used for authentication to Keyfactor Command API
-	Password string `json:"password,omitempty"`
+	Password string `json:"password,omitempty" yaml:"password,omitempty"`
 
 	// Domain is the domain of the Active Directory used to authenticate to Keyfactor Command API
-	Domain string `json:"domain,omitempty"`
+	Domain string `json:"domain,omitempty" yaml:"domain,omitempty"`
 }
 
 // NewBasicAuthAuthenticatorBuilder creates a new instance of CommandAuthConfigBasic
@@ -194,8 +194,8 @@ func (a *CommandAuthConfigBasic) Authenticate() error {
 		return cErr
 	}
 
-	// create oauth Client
-	authy, err := NewBasicAuthAuthenticatorBuilder().
+	// create Basic Client
+	authy, err := a.
 		WithUsername(a.Username).
 		WithPassword(a.Password).
 		WithDomain(a.Domain).
