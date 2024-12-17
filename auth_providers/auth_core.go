@@ -322,6 +322,9 @@ func (c *CommandAuthConfig) BuildTransport() (*http.Transport, error) {
 				return &output, fmt.Errorf("failed to append custom CA cert to pool")
 			}
 		} else {
+			if output.TLSClientConfig.RootCAs == nil {
+				output.TLSClientConfig.RootCAs = x509.NewCertPool()
+			}
 			// Append your custom cert to the pool
 			if ok := output.TLSClientConfig.RootCAs.AppendCertsFromPEM([]byte(c.CommandCACert)); !ok {
 				return &output, fmt.Errorf("failed to append custom CA cert to pool")

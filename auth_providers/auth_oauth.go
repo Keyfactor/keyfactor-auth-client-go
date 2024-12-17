@@ -220,12 +220,6 @@ func (b *CommandConfigOauth) GetHttpClient() (*http.Client, error) {
 		b.Scopes = DefaultScopes
 	}
 
-	if b.Audience != "" {
-		config.EndpointParams = map[string][]string{
-			"Audience": {b.Audience},
-		}
-	}
-
 	ctx := context.WithValue(context.Background(), oauth2.HTTPClient, &http.Client{Transport: baseTransport})
 	tokenSource := config.TokenSource(ctx)
 

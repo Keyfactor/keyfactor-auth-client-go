@@ -314,6 +314,8 @@ func (s *Server) GetOAuthClientConfig() (*CommandConfigOauth, error) {
 		WithClientSecret(s.ClientSecret).
 		WithAccessToken(s.AccessToken).
 		WithTokenUrl(s.OAuthTokenUrl).
+		WithScopes(s.Scopes).
+		WithAudience(s.Audience).
 		Build()
 
 	vErr := oauthConfig.ValidateAuthConfig()
