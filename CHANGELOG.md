@@ -2,6 +2,7 @@
 
 ## Bug fixes
 - `oauth2` client now correctly sets the `scopes` and `audience` fields when invoked with explicit values.
+- `core` when passing a string for CA certificate check if `.TLSClientConfig.RootCAs` is nil and create a new `CertPool` if it is.
 
 ## Chores
 - Update `stretchr/testify` to `v1.10.0`  
