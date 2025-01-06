@@ -27,12 +27,13 @@ variable "keyfactor_client_secret_12_3_0" {
 variable "keyfactor_hostname_12_3_0_KC" {
   description = "The hostname of the Keyfactor instance"
   type        = string
-  default     = "int-oidc-lab.eastus2.cloudapp.azure.com"
+  default     = "int1230-oauth.eastus2.cloudapp.azure.com"
+
 }
 
 variable "keyfactor_auth_token_url_12_3_0_KC" {
   description = "The hostname of the KeyCloak instance to authenticate to for a Keyfactor Command access token"
   type        = string
-  default     = "https://int-oidc-lab.eastus2.cloudapp.azure.com:8444/realms/Keyfactor/protocol/openid-connect/token"
+  default     = "https://int1230-oauth.eastus2.cloudapp.azure.com:8444/realms/Keyfactor/protocol/openid-connect/token"
 }
 

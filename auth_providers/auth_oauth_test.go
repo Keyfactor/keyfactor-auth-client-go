@@ -15,9 +15,13 @@
 package auth_providers_test
 
 import (
+	"crypto/tls"
+	"encoding/pem"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -107,7 +111,19 @@ func TestCommandConfigOauth_Authenticate(t *testing.T) {
 		t.FailNow()
 	}
 
-	caCertPath := "../lib/certs/int-oidc-lab.eastus2.cloudapp.azure.com.crt"
+	hostName := os.Getenv(auth_providers.EnvKeyfactorHostName)
+	caCertPath := fmt.Sprintf("../lib/certs/%s.crt", hostName)
+	// check if the caCertPath exists and if not then reach out to host to get the cert and save it to the path
+	if _, err := os.Stat(caCertPath); os.IsNotExist(err) {
+		// get the cert from the host
+		dErr := DownloadCertificate(hostName, caCertPath)
+		if dErr != nil {
+			t.Errorf("unable to download certificate from %s: %v", hostName, dErr)
+			t.FailNow()
+		}
+
+		// save the cert to the
+	}
 
 	//Delete the config file
 	t.Logf("Deleting config file: %s", configFilePath)
@@ -433,4 +449,84 @@ func unsetOAuthEnvVariables() {
 	//os.Unsetenv(auth_providers.EnvKeyfactorPassword)
 	//os.Unsetenv(auth_providers.EnvKeyfactorDomain)
 
+}
+
+// DownloadCertificate fetches the SSL certificate chain from the given URL or hostname
+// while ignoring SSL verification and saves it to a file named "<hostname>.crt".
+func DownloadCertificate(input string, outputPath string) error {
+	// Ensure the input has a scheme; default to "https://"
+	if !strings.HasPrefix(input, "http://") && !strings.HasPrefix(input, "https://") {
+		input = "https://" + input
+	}
+
+	// Parse the URL
+	parsedURL, err := url.Parse(input)
+	if err != nil {
+		return fmt.Errorf("invalid URL: %v", err)
+	}
+
+	hostname := parsedURL.Hostname()
+	if hostname == "" {
+		return fmt.Errorf("could not determine hostname from URL: %s", input)
+	}
+
+	// Set default output path to current working directory if none is provided
+	if outputPath == "" {
+		cwd, err := os.Getwd()
+		if err != nil {
+			return fmt.Errorf("failed to get current working directory: %v", err)
+		}
+		outputPath = cwd
+	}
+
+	// Ensure the output directory exists
+	if err := os.MkdirAll(outputPath, os.ModePerm); err != nil {
+		return fmt.Errorf("failed to create output directory: %v", err)
+	}
+
+	// Create the output file
+	outputFile := filepath.Join(outputPath, fmt.Sprintf("%s.crt", hostname))
+	file, err := os.Create(outputFile)
+	if err != nil {
+		return fmt.Errorf("failed to create file %s: %v", outputFile, err)
+	}
+	defer file.Close()
+
+	// Create an HTTP client that ignores SSL verification
+	httpClient := &http.Client{
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{
+				InsecureSkipVerify: true, // Ignore SSL certificate verification
+			},
+		},
+	}
+
+	// Send an HTTP GET request to the server
+	resp, err := httpClient.Get(input)
+	if err != nil {
+		return fmt.Errorf("failed to connect to %s: %v", input, err)
+	}
+	defer resp.Body.Close()
+
+	// Get the TLS connection state from the response
+	tlsConnState := resp.TLS
+	if tlsConnState == nil {
+		return fmt.Errorf("no TLS connection state found")
+	}
+
+	// Write the entire certificate chain to the output file in PEM format
+	for _, cert := range tlsConnState.PeerCertificates {
+		err = pem.Encode(
+			file, &pem.Block{
+				Type:  "CERTIFICATE",
+				Bytes: cert.Raw,
+			},
+		)
+		if err != nil {
+			return fmt.Errorf("failed to write certificate to file: %v", err)
+		}
+	}
+
+	fmt.Printf("Certificate chain saved to: %s\n", outputFile)
+	return nil
 }
