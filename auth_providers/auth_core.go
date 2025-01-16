@@ -15,12 +15,14 @@
 package auth_providers
 
 import (
+	"bytes"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -53,6 +55,9 @@ const (
 
 	// DefaultClientTimeout is the default timeout for the http Client
 	DefaultClientTimeout = 60
+
+	//Default HTTP protocol
+	DefaultHttpProtocol = "https"
 
 	// EnvKeyfactorHostName is the environment variable for the Keyfactor Command hostname
 	EnvKeyfactorHostName = "KEYFACTOR_HOSTNAME"
@@ -139,6 +144,9 @@ type CommandAuthConfig struct {
 	// Debug
 	Debug bool `json:"debug,omitempty" yaml:"debug,omitempty"`
 
+	// HTTPProtocol
+	HttpProtocol string `json:"http_protocol,omitempty" yaml:"http_protocol,omitempty"`
+
 	// HttpClient is the http Client to be used for authentication to Keyfactor Command API
 	HttpClient *http.Client
 	//DefaultHttpClient *http.Client
@@ -159,6 +167,12 @@ func cleanHostName(hostName string) string {
 
 // WithCommandHostName sets the hostname for authentication to Keyfactor Command API.
 func (c *CommandAuthConfig) WithCommandHostName(hostName string) *CommandAuthConfig {
+
+	//check for http or https prefix
+	if strings.Contains(hostName, "http://") {
+		c.HttpProtocol = "http"
+	}
+
 	hostName = cleanHostName(hostName)
 	c.CommandHostName = hostName
 	return c
@@ -449,6 +463,10 @@ func (c *CommandAuthConfig) Authenticate() error {
 	if c.HttpClient == nil {
 		c.SetClient(nil)
 	}
+
+	if c.HttpProtocol == "" {
+		c.HttpProtocol = DefaultHttpProtocol
+	}
 	//create headers for request
 	headers := map[string]string{
 		"Content-Type":               "application/json",
@@ -462,11 +480,13 @@ func (c *CommandAuthConfig) Authenticate() error {
 	}
 
 	endPoint := fmt.Sprintf(
-		"https://%s/%s/Status/Endpoints",
+		"%s://%s/%s/Status/Endpoints",
+		c.HttpProtocol,
 		c.CommandHostName,
 		//c.CommandPort,
 		c.CommandAPIPath,
 	)
+	log.Printf("[DEBUG] testing auth using endpoint %s ", endPoint)
 
 	// create request object
 	req, rErr := http.NewRequest("GET", endPoint, nil)
@@ -480,6 +500,11 @@ func (c *CommandAuthConfig) Authenticate() error {
 	}
 
 	c.HttpClient.Timeout = time.Duration(c.HttpClientTimeout) * time.Second
+	curlStr, cErr := RequestToCurl(req)
+	if cErr == nil {
+		log.Printf("[TRACE] curl command: %s", curlStr)
+	}
+
 	cResp, cErr := c.HttpClient.Do(req)
 	if cErr != nil {
 		return cErr
@@ -759,3 +784,33 @@ type contextKey string
 //			fmt.Println("Authentication successful")
 //		}
 //	}
+
+func RequestToCurl(req *http.Request) (string, error) {
+	var curlCommand strings.Builder
+
+	// Start with the cURL command
+	curlCommand.WriteString(fmt.Sprintf("curl -X %s ", req.Method))
+
+	// Add the URL
+	curlCommand.WriteString(fmt.Sprintf("%q ", req.URL.String()))
+
+	// Add headers
+	for name, values := range req.Header {
+		for _, value := range values {
+			curlCommand.WriteString(fmt.Sprintf("-H %q ", fmt.Sprintf("%s: %s", name, value)))
+		}
+	}
+
+	// Add the body if it exists
+	if req.Method == http.MethodPost || req.Method == http.MethodPut {
+		body, err := io.ReadAll(req.Body)
+		if err != nil {
+			return "", err
+		}
+		req.Body = io.NopCloser(bytes.NewBuffer(body)) // Restore the request body
+
+		curlCommand.WriteString(fmt.Sprintf("--data %q ", string(body)))
+	}
+
+	return curlCommand.String(), nil
+}
