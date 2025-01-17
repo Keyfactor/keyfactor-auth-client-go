@@ -14,7 +14,7 @@
 
 module github.com/Keyfactor/keyfactor-auth-client-go
 
-go 1.22
+go 1.23
 
 require (
 	github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.8.1
