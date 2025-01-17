@@ -270,7 +270,7 @@ func (c *CommandAuthConfig) ValidateAuthConfig() error {
 	}
 	if c.CommandAPIPath == "" {
 		if apiPath, ok := os.LookupEnv(EnvKeyfactorAPIPath); ok {
-			c.CommandAPIPath = apiPath
+			c.CommandAPIPath = strings.Trim(apiPath, "/")
 		} else {
 			c.CommandAPIPath = DefaultCommandAPIPath
 		}
