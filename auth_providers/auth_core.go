@@ -270,11 +270,12 @@ func (c *CommandAuthConfig) ValidateAuthConfig() error {
 	}
 	if c.CommandAPIPath == "" {
 		if apiPath, ok := os.LookupEnv(EnvKeyfactorAPIPath); ok {
-			c.CommandAPIPath = strings.Trim(apiPath, "/")
+			c.CommandAPIPath = apiPath
 		} else {
 			c.CommandAPIPath = DefaultCommandAPIPath
 		}
 	}
+	c.CommandAPIPath = strings.Trim(c.CommandAPIPath, "/")
 	if c.HttpClientTimeout <= 0 {
 		if timeout, ok := os.LookupEnv(EnvKeyfactorClientTimeout); ok {
 			configTimeout, tErr := strconv.Atoi(timeout)
