@@ -5,6 +5,7 @@
 
 ## Bug fixes
 - Ensure `CommandAPIPath` is always trimmed of any leading or trailing `/`. ([45023c9](https://github.com/Keyfactor/keyfactor-auth-client-go/commit/45023c94e9be0ae9b307f38af972bbc0b40998d4))
+- `oauth` set `DefaultScopes` to empty slice of string rather than `openid`. ([b35d18a](https://github.com/Keyfactor/keyfactor-auth-client-go/commit/b35d18a19430692e65e98623fbfd7300f449bec8))
 
 ## Chores
 - Bump Go version to `1.23`. ([9e62e2a](https://github.com/Keyfactor/keyfactor-auth-client-go/commit/9e62e2ab3a5c8ea0883df5a5902eaa91f2776f23))
