@@ -1,5 +1,8 @@
 # v1.2.0
 
+## Fixes
+- `oauth` set `DefaultScopes` to empty slice of string.
+
 ## Features
 - Add logging of the authentication test request as a `curl` string. ([7be00ce](https://github.com/Keyfactor/keyfactor-auth-client-go/commit/7be00ce82b6dd7880449e6585590ec702992a388))
 
