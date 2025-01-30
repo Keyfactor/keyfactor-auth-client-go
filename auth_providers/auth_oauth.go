@@ -59,7 +59,7 @@ const (
 
 var (
 	// DefaultScopes is the default scopes for Keyfactor authentication
-	DefaultScopes = []string{"openid"}
+	DefaultScopes []string
 )
 
 // OAuth Authenticator
