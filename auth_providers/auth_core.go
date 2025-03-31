@@ -506,9 +506,9 @@ func (c *CommandAuthConfig) Authenticate() error {
 		log.Printf("[TRACE] curl command: %s", curlStr)
 	}
 
-	cResp, cErr := c.HttpClient.Do(req)
-	if cErr != nil {
-		return cErr
+	cResp, reqErr := c.HttpClient.Do(req)
+	if reqErr != nil {
+		return reqErr
 	} else if cResp == nil {
 		return fmt.Errorf("failed to authenticate, no response received from Keyfactor Command")
 	}
@@ -522,7 +522,10 @@ func (c *CommandAuthConfig) Authenticate() error {
 
 	cRespBody, ioErr := io.ReadAll(cResp.Body)
 	if ioErr != nil {
-		return ioErr
+		if cResp.StatusCode != 200 {
+			return ioErr
+		}
+		log.Printf("[WARN] failed to read response body from Keyfactor Command: %s", ioErr)
 	}
 
 	if cResp.StatusCode != 200 {
@@ -543,10 +546,16 @@ func (c *CommandAuthConfig) Authenticate() error {
 
 	//decode response to json
 	var response []string
-	if err := json.Unmarshal(cRespBody, &response); err != nil {
-		return err
+	dErr := json.Unmarshal(cRespBody, &response)
+	if dErr != nil {
+		if cResp.StatusCode != 200 {
+			return dErr
+		}
+		log.Printf("[WARN] failed to decode response body from Keyfactor Command: %s", dErr)
 	}
 
+	log.Printf("[DEBUG] Keyfactor Command API version: %s", c.CommandVersion)
+	log.Printf("[INFO] Authentications successful using Keyfactor Command API version %s", c.CommandVersion)
 	return nil
 
 }
