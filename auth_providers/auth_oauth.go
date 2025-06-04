@@ -18,6 +18,7 @@ import (
 	"context"
 	"crypto/x509"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"strings"
@@ -441,14 +442,22 @@ func (b *CommandConfigOauth) GetServerConfig() *Server {
 
 // RoundTrip executes a single HTTP transaction, adding the OAuth2 token to the request
 func (t *oauth2Transport) RoundTrip(req *http.Request) (*http.Response, error) {
+	log.Printf("[DEBUG] Attempting to get oAuth token from: %s %s", req.Method, req.URL)
 	token, err := t.src.Token()
 	if err != nil {
 		return nil, fmt.Errorf("failed to retrieve OAuth token: %w", err)
 	}
 
+	if token == nil || token.AccessToken == "" {
+		return nil, fmt.Errorf("received empty OAuth token")
+	}
+
 	// Clone the request to avoid mutating the original
+	log.Printf("[DEBUG] Adding oAuth token to request: %s %s", req.Method, req.URL)
 	reqCopy := req.Clone(req.Context())
 	token.SetAuthHeader(reqCopy)
+	requestCurlStr, _ := RequestToCurl(reqCopy)
+	log.Printf("[DEBUG] curl command: %s", requestCurlStr)
 
 	return t.base.RoundTrip(reqCopy)
 }
