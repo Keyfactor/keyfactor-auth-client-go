@@ -457,7 +457,7 @@ func (t *oauth2Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 	reqCopy := req.Clone(req.Context())
 	token.SetAuthHeader(reqCopy)
 	requestCurlStr, _ := RequestToCurl(reqCopy)
-	log.Printf("[DEBUG] curl command: %s", requestCurlStr)
+	log.Printf("[TRACE] curl command: %s", requestCurlStr)
 
 	return t.base.RoundTrip(reqCopy)
 }
