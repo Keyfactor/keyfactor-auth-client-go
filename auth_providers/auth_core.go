@@ -503,8 +503,8 @@ func (c *CommandAuthConfig) Authenticate() error {
 	c.HttpClient.Timeout = time.Duration(c.HttpClientTimeout) * time.Second
 
 	cResp, cErr := c.HttpClient.Do(req)
-	curlStr, cErr := RequestToCurl(req)
-	if cErr == nil {
+	curlStr, curlErr := RequestToCurl(req)
+	if curlErr == nil {
 		log.Printf("[TRACE] curl command: %s", curlStr)
 	}
 
