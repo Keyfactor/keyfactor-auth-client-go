@@ -1,3 +1,11 @@
+# v1.2.1
+
+## Bug Fixes
+- Log `curl` command string at `trace` level after request is sent to include any transport mutations.
+
+## Chores
+- Bump Go version to `1.24`.
+
 # v1.2.0
 
 ## Features

@@ -501,12 +501,13 @@ func (c *CommandAuthConfig) Authenticate() error {
 	}
 
 	c.HttpClient.Timeout = time.Duration(c.HttpClientTimeout) * time.Second
-	curlStr, cErr := RequestToCurl(req)
-	if cErr == nil {
+
+	cResp, cErr := c.HttpClient.Do(req)
+	curlStr, curlErr := RequestToCurl(req)
+	if curlErr == nil {
 		log.Printf("[TRACE] curl command: %s", curlStr)
 	}
 
-	cResp, cErr := c.HttpClient.Do(req)
 	if cErr != nil {
 		return cErr
 	} else if cResp == nil {
@@ -514,6 +515,7 @@ func (c *CommandAuthConfig) Authenticate() error {
 	}
 
 	defer cResp.Body.Close()
+	log.Printf("[DEBUG] request to Keyfactor Command API returned status code %d", cResp.StatusCode)
 
 	// check if body is empty
 	if cResp.Body == nil {
