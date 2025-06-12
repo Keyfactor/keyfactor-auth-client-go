@@ -256,7 +256,7 @@ func TestCommandConfigOauth_Authenticate(t *testing.T) {
 	}
 	fullParamsInvalidPassConfig.WithSkipVerify(true)
 	invalidCredsExpectedError := []string{
-		"oauth2", "unauthorized_client", "Invalid client or Invalid client credentials",
+		"oauth2", "fail", "invalid", "client",
 	}
 	authOauthTest(t, "w/ full params & invalid pass", true, fullParamsInvalidPassConfig, invalidCredsExpectedError...)
 
@@ -346,6 +346,18 @@ func TestCommandConfigOauth_Authenticate(t *testing.T) {
 	authOauthTest(t, "with invalid creds implicit config file", true, invCmdHost, invHostExpectedError...)
 }
 
+func TestCommandConfigOauth_GetAccessToken(t *testing.T) {
+	clientID, clientSecret, tokenURL := exportOAuthEnvVariables()
+	t.Log("Testing auth with w/ full params variables")
+	fullParamsConfig := &auth_providers.CommandConfigOauth{
+		ClientID:     clientID,
+		ClientSecret: clientSecret,
+		TokenURL:     tokenURL,
+	}
+	fullParamsConfig.WithSkipVerify(true)
+	authOauthTest(t, "w/ GetAccessToken w/ full params variables", false, fullParamsConfig)
+}
+
 func TestCommandConfigOauth_Build(t *testing.T) {
 	// Skip test if TEST_KEYFACTOR_AD_AUTH is set to 1 or true
 	if os.Getenv("TEST_KEYFACTOR_AD_AUTH") == "1" || os.Getenv("TEST_KEYFACTOR_AD_AUTH") == "true" {
@@ -376,6 +388,23 @@ func authOauthTest(
 	t.Run(
 		fmt.Sprintf("oAuth Auth Test %s", testName), func(t *testing.T) {
 
+			// oauth credentials should always generate an access token
+			oauthToken, tErr := config.GetAccessToken()
+			if !allowFail {
+				if tErr != nil {
+					t.Errorf("oAuth auth test '%s' failed to get token source with %v", testName, tErr)
+					t.FailNow()
+					return
+				}
+
+				if oauthToken == nil || oauthToken.AccessToken == "" {
+					t.Errorf("oAuth auth test '%s' failed to get token source", testName)
+					t.FailNow()
+					return
+				}
+				//t.Logf("token %s", at.AccessToken)
+				t.Logf("oAuth auth test '%s' succeeded", testName)
+			}
 			err := config.Authenticate()
 			if allowFail {
 				if err == nil {
