@@ -18,6 +18,7 @@ import (
 	"context"
 	"crypto/x509"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"strings"
@@ -439,16 +440,51 @@ func (b *CommandConfigOauth) GetServerConfig() *Server {
 	return &server
 }
 
+// GetAccessToken returns the OAuth2 token source for the given configuration.
+func (b *CommandConfigOauth) GetAccessToken() (oauth2.TokenSource, error) {
+	log.Printf("[DEBUG] Getting OAuth2 token source for client ID: %s", b.ClientID)
+	if b.ClientID == "" || b.ClientSecret == "" || b.TokenURL == "" {
+		return nil, fmt.Errorf("client ID, client secret, and token URL must be provided")
+	}
+
+	config := &clientcredentials.Config{
+		ClientID:     b.ClientID,
+		ClientSecret: b.ClientSecret,
+		TokenURL:     b.TokenURL,
+		Scopes:       b.Scopes,
+	}
+
+	if b.Audience != "" {
+		log.Printf("[DEBUG] Setting audience for OAuth2 token source: %s", b.Audience)
+		config.EndpointParams = map[string][]string{
+			"audience": {b.Audience},
+		}
+	}
+
+	ctx := context.Background()
+	log.Printf("[DEBUG] Returning call config.TokenSource() for client ID: %s", b.ClientID)
+	return config.TokenSource(ctx), nil
+}
+
 // RoundTrip executes a single HTTP transaction, adding the OAuth2 token to the request
 func (t *oauth2Transport) RoundTrip(req *http.Request) (*http.Response, error) {
+	log.Printf("[DEBUG] Attempting to get oAuth token from: %s %s", req.Method, req.URL)
 	token, err := t.src.Token()
 	if err != nil {
+
 		return nil, fmt.Errorf("failed to retrieve OAuth token: %w", err)
 	}
 
+	if token == nil || token.AccessToken == "" {
+		return nil, fmt.Errorf("received empty OAuth token")
+	}
+
 	// Clone the request to avoid mutating the original
+	log.Printf("[DEBUG] Adding oAuth token to request: %s %s", req.Method, req.URL)
 	reqCopy := req.Clone(req.Context())
 	token.SetAuthHeader(reqCopy)
+	requestCurlStr, _ := RequestToCurl(reqCopy)
+	log.Printf("[TRACE] curl command: %s", requestCurlStr)
 
 	return t.base.RoundTrip(reqCopy)
 }
