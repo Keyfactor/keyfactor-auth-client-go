@@ -37,3 +37,25 @@ variable "keyfactor_auth_token_url_12_3_0_KC" {
   default     = "https://int1230-oauth.eastus2.cloudapp.azure.com:8444/realms/Keyfactor/protocol/openid-connect/token"
 }
 
+variable "keyfactor_client_id_ses_2441" {
+  description = "The client ID to authenticate with the Keyfactor instance using Keycloak client credentials"
+  type        = string
+}
+
+variable "keyfactor_client_secret_ses_2441" {
+  description = "The client secret to authenticate with the Keyfactor instance using Keycloak client credentials"
+  type        = string
+}
+
+variable "keyfactor_hostname_ses_2441" {
+  description = "The hostname of the Keyfactor instance"
+  type        = string
+  default     = "int2441.kftestlab.com"
+
+}
+
+variable "keyfactor_auth_token_url_ses_2441" {
+  description = "The hostname of the KeyCloak instance to authenticate to for a Keyfactor Command access token"
+  type        = string
+  default     = "https://auth.kftestlab.com/oauth2/token"
+}
