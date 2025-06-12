@@ -441,7 +441,7 @@ func (b *CommandConfigOauth) GetServerConfig() *Server {
 }
 
 // GetAccessToken returns the OAuth2 token source for the given configuration.
-func (b *CommandConfigOauth) GetAccessToken() (oauth2.TokenSource, error) {
+func (b *CommandConfigOauth) GetAccessToken() (*oauth2.Token, error) {
 	if b == nil {
 		return nil, fmt.Errorf("CommandConfigOauth is nil")
 	}
@@ -450,13 +450,11 @@ func (b *CommandConfigOauth) GetAccessToken() (oauth2.TokenSource, error) {
 
 	if b.AccessToken != "" && (b.ClientID == "" || b.ClientSecret == "" || b.TokenURL == "") {
 		log.Printf("[DEBUG] Access token is explicitly set, and no client credentials are provided. Using static token source.")
-		return oauth2.StaticTokenSource(
-			&oauth2.Token{
-				AccessToken: b.AccessToken,
-				TokenType:   DefaultTokenPrefix,
-				Expiry:      b.Expiry,
-			},
-		), nil
+		return &oauth2.Token{
+			AccessToken: b.AccessToken,
+			TokenType:   DefaultTokenPrefix,
+			Expiry:      b.Expiry,
+		}, nil
 	}
 
 	log.Printf("[DEBUG] Getting OAuth2 token source for client ID: %s", b.ClientID)
@@ -492,7 +490,7 @@ func (b *CommandConfigOauth) GetAccessToken() (oauth2.TokenSource, error) {
 		return nil, fmt.Errorf("received empty OAuth token for client ID: %s", b.ClientID)
 	}
 
-	return tokenSource, nil
+	return token, nil
 }
 
 // RoundTrip executes a single HTTP transaction, adding the OAuth2 token to the request

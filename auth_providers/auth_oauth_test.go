@@ -26,7 +26,6 @@ import (
 	"testing"
 
 	"github.com/Keyfactor/keyfactor-auth-client-go/auth_providers"
-	"golang.org/x/oauth2"
 )
 
 func TestOAuthAuthenticator_GetHttpClient(t *testing.T) {
@@ -397,19 +396,8 @@ func authOauthTest(
 					t.FailNow()
 					return
 				}
-				if oauthToken == nil {
-					t.Errorf("oAuth auth test '%s' failed to get token source", testName)
-					t.FailNow()
-					return
-				}
-				var at *oauth2.Token
-				var tkErr error
-				at, tkErr = oauthToken.Token()
-				if tkErr != nil {
-					t.Errorf("oAuth auth test '%s' failed to get token source", testName)
-					t.FailNow()
-				}
-				if at == nil || at.AccessToken == "" {
+
+				if oauthToken == nil || oauthToken.AccessToken == "" {
 					t.Errorf("oAuth auth test '%s' failed to get token source", testName)
 					t.FailNow()
 					return
