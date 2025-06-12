@@ -442,6 +442,23 @@ func (b *CommandConfigOauth) GetServerConfig() *Server {
 
 // GetAccessToken returns the OAuth2 token source for the given configuration.
 func (b *CommandConfigOauth) GetAccessToken() (oauth2.TokenSource, error) {
+	if b == nil {
+		return nil, fmt.Errorf("CommandConfigOauth is nil")
+	}
+
+	b.ValidateAuthConfig()
+
+	if b.AccessToken != "" && (b.ClientID == "" || b.ClientSecret == "" || b.TokenURL == "") {
+		log.Printf("[DEBUG] Access token is explicitly set, and no client credentials are provided. Using static token source.")
+		return oauth2.StaticTokenSource(
+			&oauth2.Token{
+				AccessToken: b.AccessToken,
+				TokenType:   DefaultTokenPrefix,
+				Expiry:      b.Expiry,
+			},
+		), nil
+	}
+
 	log.Printf("[DEBUG] Getting OAuth2 token source for client ID: %s", b.ClientID)
 	if b.ClientID == "" || b.ClientSecret == "" || b.TokenURL == "" {
 		return nil, fmt.Errorf("client ID, client secret, and token URL must be provided")
@@ -463,7 +480,19 @@ func (b *CommandConfigOauth) GetAccessToken() (oauth2.TokenSource, error) {
 
 	ctx := context.Background()
 	log.Printf("[DEBUG] Returning call config.TokenSource() for client ID: %s", b.ClientID)
-	return config.TokenSource(ctx), nil
+	tokenSource := config.TokenSource(ctx)
+	if tokenSource == nil {
+		return nil, fmt.Errorf("failed to create token source for client ID: %s", b.ClientID)
+	}
+	token, tErr := tokenSource.Token()
+	if tErr != nil {
+		return nil, fmt.Errorf("failed to retrieve token for client ID %s: %w", b.ClientID, tErr)
+	}
+	if token == nil || token.AccessToken == "" {
+		return nil, fmt.Errorf("received empty OAuth token for client ID: %s", b.ClientID)
+	}
+
+	return tokenSource, nil
 }
 
 // RoundTrip executes a single HTTP transaction, adding the OAuth2 token to the request

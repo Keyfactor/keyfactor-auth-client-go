@@ -257,7 +257,7 @@ func TestCommandConfigOauth_Authenticate(t *testing.T) {
 	}
 	fullParamsInvalidPassConfig.WithSkipVerify(true)
 	invalidCredsExpectedError := []string{
-		"oauth2", "unauthorized_client", "Invalid client or Invalid client credentials",
+		"oauth2", "fail", "invalid", "client",
 	}
 	authOauthTest(t, "w/ full params & invalid pass", true, fullParamsInvalidPassConfig, invalidCredsExpectedError...)
 
@@ -391,31 +391,32 @@ func authOauthTest(
 
 			// oauth credentials should always generate an access token
 			oauthToken, tErr := config.GetAccessToken()
-			if tErr != nil {
-				t.Errorf("oAuth auth test '%s' failed to get token source with %v", testName, tErr)
-				t.FailNow()
-				return
+			if !allowFail {
+				if tErr != nil {
+					t.Errorf("oAuth auth test '%s' failed to get token source with %v", testName, tErr)
+					t.FailNow()
+					return
+				}
+				if oauthToken == nil {
+					t.Errorf("oAuth auth test '%s' failed to get token source", testName)
+					t.FailNow()
+					return
+				}
+				var at *oauth2.Token
+				var tkErr error
+				at, tkErr = oauthToken.Token()
+				if tkErr != nil {
+					t.Errorf("oAuth auth test '%s' failed to get token source", testName)
+					t.FailNow()
+				}
+				if at == nil || at.AccessToken == "" {
+					t.Errorf("oAuth auth test '%s' failed to get token source", testName)
+					t.FailNow()
+					return
+				}
+				//t.Logf("token %s", at.AccessToken)
+				t.Logf("oAuth auth test '%s' succeeded", testName)
 			}
-			if oauthToken == nil {
-				t.Errorf("oAuth auth test '%s' failed to get token source", testName)
-				t.FailNow()
-				return
-			}
-			var at *oauth2.Token
-			var tkErr error
-			at, tkErr = oauthToken.Token()
-			if tkErr != nil {
-				t.Errorf("oAuth auth test '%s' failed to get token source", testName)
-				t.FailNow()
-			}
-			if at == nil || at.AccessToken == "" {
-				t.Errorf("oAuth auth test '%s' failed to get token source", testName)
-				t.FailNow()
-				return
-			}
-			//t.Logf("token %s", at.AccessToken)
-			t.Logf("oAuth auth test '%s' succeeded", testName)
-
 			err := config.Authenticate()
 			if allowFail {
 				if err == nil {
