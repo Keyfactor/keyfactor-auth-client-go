@@ -18,6 +18,7 @@ import (
 	"context"
 	"crypto/x509"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"strings"
@@ -439,16 +440,78 @@ func (b *CommandConfigOauth) GetServerConfig() *Server {
 	return &server
 }
 
+// GetAccessToken returns the OAuth2 token source for the given configuration.
+func (b *CommandConfigOauth) GetAccessToken() (*oauth2.Token, error) {
+	if b == nil {
+		return nil, fmt.Errorf("CommandConfigOauth is nil")
+	}
+
+	b.ValidateAuthConfig()
+
+	if b.AccessToken != "" && (b.ClientID == "" || b.ClientSecret == "" || b.TokenURL == "") {
+		log.Printf("[DEBUG] Access token is explicitly set, and no client credentials are provided. Using static token source.")
+		return &oauth2.Token{
+			AccessToken: b.AccessToken,
+			TokenType:   DefaultTokenPrefix,
+			Expiry:      b.Expiry,
+		}, nil
+	}
+
+	log.Printf("[DEBUG] Getting OAuth2 token source for client ID: %s", b.ClientID)
+	if b.ClientID == "" || b.ClientSecret == "" || b.TokenURL == "" {
+		return nil, fmt.Errorf("client ID, client secret, and token URL must be provided")
+	}
+
+	config := &clientcredentials.Config{
+		ClientID:     b.ClientID,
+		ClientSecret: b.ClientSecret,
+		TokenURL:     b.TokenURL,
+		Scopes:       b.Scopes,
+	}
+
+	if b.Audience != "" {
+		log.Printf("[DEBUG] Setting audience for OAuth2 token source: %s", b.Audience)
+		config.EndpointParams = map[string][]string{
+			"audience": {b.Audience},
+		}
+	}
+
+	ctx := context.Background()
+	log.Printf("[DEBUG] Returning call config.TokenSource() for client ID: %s", b.ClientID)
+	tokenSource := config.TokenSource(ctx)
+	if tokenSource == nil {
+		return nil, fmt.Errorf("failed to create token source for client ID: %s", b.ClientID)
+	}
+	token, tErr := tokenSource.Token()
+	if tErr != nil {
+		return nil, fmt.Errorf("failed to retrieve token for client ID %s: %w", b.ClientID, tErr)
+	}
+	if token == nil || token.AccessToken == "" {
+		return nil, fmt.Errorf("received empty OAuth token for client ID: %s", b.ClientID)
+	}
+
+	return token, nil
+}
+
 // RoundTrip executes a single HTTP transaction, adding the OAuth2 token to the request
 func (t *oauth2Transport) RoundTrip(req *http.Request) (*http.Response, error) {
+	log.Printf("[DEBUG] Attempting to get oAuth token from: %s %s", req.Method, req.URL)
 	token, err := t.src.Token()
 	if err != nil {
+
 		return nil, fmt.Errorf("failed to retrieve OAuth token: %w", err)
 	}
 
+	if token == nil || token.AccessToken == "" {
+		return nil, fmt.Errorf("received empty OAuth token")
+	}
+
 	// Clone the request to avoid mutating the original
+	log.Printf("[DEBUG] Adding oAuth token to request: %s %s", req.Method, req.URL)
 	reqCopy := req.Clone(req.Context())
 	token.SetAuthHeader(reqCopy)
+	requestCurlStr, _ := RequestToCurl(reqCopy)
+	log.Printf("[TRACE] curl command: %s", requestCurlStr)
 
 	return t.base.RoundTrip(reqCopy)
 }
