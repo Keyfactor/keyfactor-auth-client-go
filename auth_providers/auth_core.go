@@ -501,12 +501,13 @@ func (c *CommandAuthConfig) Authenticate() error {
 	}
 
 	c.HttpClient.Timeout = time.Duration(c.HttpClientTimeout) * time.Second
-	curlStr, cErr := RequestToCurl(req)
-	if cErr == nil {
+
+	cResp, cErr := c.HttpClient.Do(req)
+	curlStr, curlErr := RequestToCurl(req)
+	if curlErr == nil {
 		log.Printf("[TRACE] curl command: %s", curlStr)
 	}
 
-	cResp, cErr := c.HttpClient.Do(req)
 	if cErr != nil {
 		return cErr
 	} else if cResp == nil {
@@ -514,6 +515,7 @@ func (c *CommandAuthConfig) Authenticate() error {
 	}
 
 	defer cResp.Body.Close()
+	log.Printf("[DEBUG] request to Keyfactor Command API returned status code %d", cResp.StatusCode)
 
 	// check if body is empty
 	if cResp.Body == nil {
@@ -798,19 +800,56 @@ func RequestToCurl(req *http.Request) (string, error) {
 	// Add headers
 	for name, values := range req.Header {
 		for _, value := range values {
+			// check if is Authorization header and skip it
+			if strings.EqualFold(name, "Authorization") {
+				// check if basic auth and skip it
+				if strings.HasPrefix(value, "Basic ") {
+					// Remove credentials and put in env variables as placeholder
+					log.Printf(
+						"[DEBUG] Found Basic auth in Authorization header, " +
+							"replacing with env variable references",
+					)
+					curlCommand.WriteString(
+						fmt.Sprintf(
+							"-H %q ", fmt.Sprintf(
+								"%s: Basic $(echo -n $\"%s,$%s\" | base64)", name,
+								EnvKeyfactorUsername, EnvKeyfactorPassword,
+							),
+						),
+					)
+					continue
+				} else if strings.HasPrefix(value, "Bearer ") {
+					// Remove credentials and put in env variables as placeholder
+					log.Printf("[DEBUG] Found Bearer token in Authorization header, replacing with kfutil command to fetch token")
+					curlCommand.WriteString(
+						fmt.Sprintf(
+							"-H %q ", fmt.Sprintf(
+								"%s: Bearer $(kfutil auth fetch-oauth-token)", name,
+							),
+						),
+					)
+					continue
+				} else {
+					// Skip other Authorization headers
+					log.Printf("[ERROR] Skipping unhandled Authorization header: %s", name)
+					continue
+				}
+			}
 			curlCommand.WriteString(fmt.Sprintf("-H %q ", fmt.Sprintf("%s: %s", name, value)))
 		}
 	}
 
 	// Add the body if it exists
 	if req.Method == http.MethodPost || req.Method == http.MethodPut {
-		body, err := io.ReadAll(req.Body)
-		if err != nil {
-			return "", err
-		}
-		req.Body = io.NopCloser(bytes.NewBuffer(body)) // Restore the request body
+		if req.Body != nil {
+			body, err := io.ReadAll(req.Body)
+			if err != nil {
+				return "", err
+			}
+			req.Body = io.NopCloser(bytes.NewBuffer(body)) // Restore the request body
 
-		curlCommand.WriteString(fmt.Sprintf("--data %q ", string(body)))
+			curlCommand.WriteString(fmt.Sprintf("--data %q ", string(body)))
+		}
 	}
 
 	return curlCommand.String(), nil
