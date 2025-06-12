@@ -188,15 +188,22 @@ func TestCommandConfigOauth_Authenticate(t *testing.T) {
 	// end test case
 
 	// Begin test case
-	noParamsConfig = &auth_providers.CommandConfigOauth{}
-	httpsFailEnvExpected := []string{"tls: failed to verify certificate"}
-	authOauthTest(
-		t,
-		fmt.Sprintf("w/o env %s", auth_providers.EnvKeyfactorCACert),
-		true,
-		noParamsConfig,
-		httpsFailEnvExpected...,
-	)
+
+	if os.Getenv("TEST_UNTRUSTED_CERT") == "1" || os.Getenv("TEST_UNTRUSTED_CERT") == "true" {
+		noParamsConfig = &auth_providers.CommandConfigOauth{}
+		httpsFailEnvExpected := []string{"tls: failed to verify certificate"}
+		t.Log("Testing oAuth with https fail env")
+		t.Logf("Setting environment variable %s", auth_providers.EnvKeyfactorSkipVerify)
+		os.Setenv(auth_providers.EnvKeyfactorSkipVerify, "false")
+		authOauthTest(
+			t,
+			fmt.Sprintf("w/o env %s", auth_providers.EnvKeyfactorCACert),
+			true,
+			noParamsConfig,
+			httpsFailEnvExpected...,
+		)
+	}
+
 	// end test case
 
 	t.Log("Testing oAuth with invalid config file path")
@@ -314,15 +321,17 @@ func TestCommandConfigOauth_Authenticate(t *testing.T) {
 	t.Logf("Unsetting environment variable %s", auth_providers.EnvKeyfactorSkipVerify)
 	os.Unsetenv(auth_providers.EnvKeyfactorSkipVerify)
 
-	t.Log("Testing oAuth with valid implicit config file https fail")
-	httpsFailConfigFile := &auth_providers.CommandConfigOauth{}
-	httpsFailConfigFile.
-		WithConfigProfile("oauth")
-	httpsFailConfigFileExpected := []string{"tls: failed to verify certificate"}
-	authOauthTest(
-		t, "oAuth with valid implicit config file https fail", true, httpsFailConfigFile,
-		httpsFailConfigFileExpected...,
-	)
+	if os.Getenv("TEST_UNTRUSTED_CERT") == "1" || os.Getenv("TEST_UNTRUSTED_CERT") == "true" {
+		t.Log("Testing oAuth with valid implicit config file https fail")
+		httpsFailConfigFile := &auth_providers.CommandConfigOauth{}
+		httpsFailConfigFile.
+			WithConfigProfile("oauth")
+		httpsFailConfigFileExpected := []string{"tls: failed to verify certificate"}
+		authOauthTest(
+			t, "oAuth with valid implicit config file https fail", true, httpsFailConfigFile,
+			httpsFailConfigFileExpected...,
+		)
+	}
 
 	t.Log("Testing oAuth with invalid profile implicit config file")
 	invProfile := &auth_providers.CommandConfigOauth{}
