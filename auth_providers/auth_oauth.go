@@ -446,7 +446,8 @@ func (b *CommandConfigOauth) GetAccessToken() (*oauth2.Token, error) {
 		return nil, fmt.Errorf("CommandConfigOauth is nil")
 	}
 
-	b.ValidateAuthConfig()
+	_ = b.ValidateAuthConfig() // sets client config if not already set but eats the error so that we can return and
+	// error fetching the token
 
 	if b.AccessToken != "" && (b.ClientID == "" || b.ClientSecret == "" || b.TokenURL == "") {
 		log.Printf("[DEBUG] Access token is explicitly set, and no client credentials are provided. Using static token source.")
