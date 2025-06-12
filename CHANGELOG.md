@@ -1,3 +1,15 @@
+# v1.3.0
+
+## Features
+- Add support for fetching an oauth2 token using the `client_credentials` grant type without connecting to Keyfactor Command.
+- Add placeholders for omitted `Authorization` header in the `curl` command string output in trace logging.
+
+## Bug Fixes
+- Log `curl` command string at `trace` level after request is sent to include any transport mutations.
+
+## Chores
+- Bump Go version to `1.24`.
+
 # v1.2.0
 
 ## Features

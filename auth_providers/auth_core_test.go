@@ -16,6 +16,7 @@ package auth_providers_test
 
 import (
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/Keyfactor/keyfactor-auth-client-go/auth_providers"
@@ -100,5 +101,77 @@ MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA7Q2+1+2+1+2+1+2+1+2+
 
 	if len(blocks) == 0 {
 		t.Fatalf("expected non-zero blocks")
+	}
+}
+
+func TestRequestToCurl(t *testing.T) {
+	tests := []struct {
+		name          string
+		method        string
+		url           string
+		headers       map[string]string
+		wantInCurl    []string
+		notWantInCurl []string
+	}{
+		{
+			name:   "Basic Auth",
+			method: "GET",
+			url:    "https://example.com/api",
+			headers: map[string]string{
+				"Authorization": "Basic dXNlcjpwYXNz",
+			},
+			wantInCurl: []string{
+				"curl", "-X", "GET", "https://example.com/api",
+				"-H", "Authorization: Basic",
+			},
+			notWantInCurl: []string{
+				"Authorization: Basic dXNlcjpwYXNz",
+			},
+		},
+		{
+			name:   "Bearer Auth",
+			method: "POST",
+			url:    "https://example.com/token",
+			headers: map[string]string{
+				"Authorization": "Bearer testtoken",
+				"Content-Type":  "application/json",
+			},
+			wantInCurl: []string{
+				"curl", "-X", "POST", "https://example.com/token",
+				"-H", "Authorization: Bearer",
+				"-H", "Content-Type: application/json",
+			},
+			notWantInCurl: []string{
+				"Authorization: Bearer testtoken",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		req, err := http.NewRequest(tt.method, tt.url, nil)
+		if err != nil {
+			t.Fatalf("failed to create request: %v", err)
+		}
+		for k, v := range tt.headers {
+			req.Header.Set(k, v)
+		}
+
+		curlStr, err := auth_providers.RequestToCurl(req)
+		if err != nil {
+			t.Errorf("%s: RequestToCurl returned error: %v", tt.name, err)
+			continue
+		}
+		for _, want := range tt.wantInCurl {
+			if !strings.Contains(curlStr, want) {
+				t.Errorf("%s: curl string missing %q\nGot: %s", tt.name, want, curlStr)
+			}
+		}
+
+		for _, notWant := range tt.notWantInCurl {
+			if strings.Contains(curlStr, notWant) {
+				t.Errorf("%s: curl string contains unwanted %q\nGot: %s", tt.name, notWant, curlStr)
+			}
+		}
+		t.Logf("%s: curl command: %s", tt.name, curlStr)
 	}
 }

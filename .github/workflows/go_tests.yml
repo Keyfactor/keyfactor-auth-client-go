@@ -12,7 +12,8 @@ jobs:
       matrix:
         environment:
 #          - "KFC_10_5_0"
-          - "KFC_12_3_0_KC"
+#          - "KFC_12_3_0_KC"
+            - "ses_2441"
     environment: ${{ matrix.environment }}
     steps:
       - name: Check out code
@@ -21,14 +22,10 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: 1.22
+          go-version: 1.24
 
       - name: Get Public IP
         run: curl -s https://api.ipify.org
-
-      - name: Validate lab cert is present
-        run: |
-          cat lib/certs/int-oidc-lab.eastus2.cloudapp.azure.com.crt
 
       - name: Run tests
         run: |
