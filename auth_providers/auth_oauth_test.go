@@ -510,23 +510,23 @@ func DownloadCertificate(input string, outputPath string) error {
 
 	// Set default output path to current working directory if none is provided
 	if outputPath == "" {
-		cwd, err := os.Getwd()
-		if err != nil {
-			return fmt.Errorf("failed to get current working directory: %v", err)
+		cwd, cwdErr := os.Getwd()
+		if cwdErr != nil {
+			return fmt.Errorf("failed to get current working directory: %v", cwdErr)
 		}
 		outputPath = cwd
 	}
 
 	// Ensure the output directory exists
-	if err := os.MkdirAll(outputPath, os.ModePerm); err != nil {
-		return fmt.Errorf("failed to create output directory: %v", err)
+	if dirErr := os.MkdirAll(filepath.Dir(outputPath), os.ModePerm); dirErr != nil {
+		return fmt.Errorf("failed to create output directory: %v", dirErr)
 	}
 
 	// Create the output file
-	outputFile := filepath.Join(outputPath, fmt.Sprintf("%s.crt", hostname))
-	file, err := os.Create(outputFile)
-	if err != nil {
-		return fmt.Errorf("failed to create file %s: %v", outputFile, err)
+	outputFile := filepath.Join(outputPath)
+	file, fErr := os.Create(outputFile)
+	if fErr != nil {
+		return fmt.Errorf("failed to create file %s: %v", outputFile, fErr)
 	}
 	defer file.Close()
 
@@ -540,9 +540,9 @@ func DownloadCertificate(input string, outputPath string) error {
 	}
 
 	// Send an HTTP GET request to the server
-	resp, err := httpClient.Get(input)
-	if err != nil {
-		return fmt.Errorf("failed to connect to %s: %v", input, err)
+	resp, respErr := httpClient.Get(input)
+	if respErr != nil {
+		return fmt.Errorf("failed to connect to %s: %v", input, respErr)
 	}
 	defer resp.Body.Close()
 
@@ -554,14 +554,14 @@ func DownloadCertificate(input string, outputPath string) error {
 
 	// Write the entire certificate chain to the output file in PEM format
 	for _, cert := range tlsConnState.PeerCertificates {
-		err = pem.Encode(
+		pemErr := pem.Encode(
 			file, &pem.Block{
 				Type:  "CERTIFICATE",
 				Bytes: cert.Raw,
 			},
 		)
-		if err != nil {
-			return fmt.Errorf("failed to write certificate to file: %v", err)
+		if pemErr != nil {
+			return fmt.Errorf("failed to write certificate to file: %v", pemErr)
 		}
 	}
 
