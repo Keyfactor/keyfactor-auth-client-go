@@ -209,12 +209,12 @@ func TestCommandAuthConfigBasic_Authenticate(t *testing.T) {
 
 	t.Log("Testing Basic Auth with invalid creds implicit config file")
 	invProfileCreds := &auth_providers.CommandAuthConfigBasic{}
-	invProfileCreds.WithConfigProfile("invalid_username")
+	invProfileCreds.WithConfigProfile("invalid-username")
 	authBasicTest(t, "with invalid creds implicit config file", true, invProfileCreds, invalidCredsExpectedError...)
 
 	t.Log("Testing Basic Auth with invalid Command host implicit config file")
 	invHostConfig := &auth_providers.CommandAuthConfigBasic{}
-	invHostConfig.WithConfigProfile("invalid_host")
+	invHostConfig.WithConfigProfile("invalid-host")
 	invHostExpectedError := []string{"no such host"}
 	authBasicTest(
 		t, "with invalid Command host implicit config file", true, invHostConfig,
