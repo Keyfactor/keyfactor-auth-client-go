@@ -25,6 +25,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/Keyfactor/keyfactor-auth-client-go/auth_providers"
@@ -572,11 +573,11 @@ func DownloadCertificate(input string, outputPath string) error {
 }
 
 func TestCommandConfigOauth_TokenSourceIsReused(t *testing.T) {
-	tokenRequestCount := 0
+	var tokenRequestCount atomic.Int32
 
 	// Fake IdP token endpoint
 	tokenServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		tokenRequestCount++
+		tokenRequestCount.Add(1)
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"access_token": "shared-test-token",
@@ -605,13 +606,14 @@ func TestCommandConfigOauth_TokenSourceIsReused(t *testing.T) {
 		if err != nil {
 			t.Fatalf("GetHttpClient() call %d failed: %v", i+1, err)
 		}
-		_, err = client.Get(apiServer.URL)
+		resp, err := client.Get(apiServer.URL)
 		if err != nil {
 			t.Fatalf("request %d failed: %v", i+1, err)
 		}
+		resp.Body.Close()
 	}
 
-	if tokenRequestCount != 1 {
-		t.Errorf("expected token endpoint to be called once, got %d — token source is not being reused across GetHttpClient() calls", tokenRequestCount)
+	if tokenRequestCount.Load() != 1 {
+		t.Errorf("expected token endpoint to be called once, got %d — token source is not being reused across GetHttpClient() calls", tokenRequestCount.Load())
 	}
 }
