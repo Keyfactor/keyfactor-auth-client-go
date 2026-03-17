@@ -231,6 +231,7 @@ func (b *CommandConfigOauth) GetHttpClient() (*http.Client, error) {
 	// Lazily initialize the token source and cache it
 	b.tsMu.Lock()
 	if b.tokenSource == nil {
+		log.Printf("[DEBUG] Initializing OAuth2 token source for client ID: %s", b.ClientID)
 		b.tokenSource = config.TokenSource(ctx)
 	}
 	tokenSource := b.tokenSource
