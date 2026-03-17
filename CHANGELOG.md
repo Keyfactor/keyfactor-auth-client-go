@@ -1,3 +1,7 @@
+# v1.3.1
+## Fixes
+- Reuse OAuth2 token source to prevent unnecessary token fetches for each request.
+
 # v1.3.0
 
 ## Features
