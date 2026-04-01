@@ -1,0 +1,28 @@
+{
+  "servers": {
+    "default": {
+      "host": "keyfactor.command.kfdelivery.com",
+      "username": "svc_keyfactor",
+      "password": "password",
+      "kerberos_realm": "KFDELIVERY.COM",
+      "kerberos_config": "/etc/krb5.conf",
+      "kerberos_disable_pafxfast": true,
+      "api_path": "KeyfactorAPI"
+    },
+    "keytab_auth": {
+      "host": "keyfactor2.command.kfdelivery.com",
+      "username": "svc_keyfactor",
+      "kerberos_realm": "KFDELIVERY.COM",
+      "kerberos_keytab": "/etc/keyfactor/svc_keyfactor.keytab",
+      "kerberos_config": "/etc/krb5.conf",
+      "kerberos_spn": "HTTP/keyfactor2.command.kfdelivery.com",
+      "api_path": "KeyfactorAPI"
+    },
+    "ccache_auth": {
+      "host": "keyfactor3.command.kfdelivery.com",
+      "kerberos_ccache": "/tmp/krb5cc_1000",
+      "kerberos_config": "/etc/krb5.conf",
+      "api_path": "KeyfactorAPI"
+    }
+  }
+}

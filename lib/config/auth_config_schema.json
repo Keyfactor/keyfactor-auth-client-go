@@ -42,6 +42,32 @@
               "type": "string",
               "description": "The Active Directory domain to authenticate with using basic auth"
             },
+            "kerberos_realm": {
+              "type": "string",
+              "description": "The Kerberos realm (uppercase, e.g., EXAMPLE.COM)"
+            },
+            "kerberos_keytab": {
+              "type": "string",
+              "description": "The path to the Kerberos keytab file for keytab-based authentication"
+            },
+            "kerberos_config": {
+              "type": "string",
+              "description": "The path to the krb5.conf file",
+              "default": "/etc/krb5.conf"
+            },
+            "kerberos_ccache": {
+              "type": "string",
+              "description": "The path to the Kerberos credential cache file"
+            },
+            "kerberos_spn": {
+              "type": "string",
+              "description": "The Service Principal Name (optional, auto-generated from host as HTTP/hostname)"
+            },
+            "kerberos_disable_pafxfast": {
+              "type": "boolean",
+              "description": "Disable PA-FX-FAST for Active Directory compatibility",
+              "default": false
+            },
             "api_path": {
               "type": "string",
               "description": "The path to the Keyfactor Command API",
@@ -87,27 +113,79 @@
           },
           "oneOf": [
             {
+              "title": "Basic Auth",
               "required": [
                 "username",
                 "password"
               ],
               "not": {
-                "required": [
-                  "client_id",
-                  "client_secret"
+                "anyOf": [
+                  { "required": ["client_id"] },
+                  { "required": ["kerberos_realm"] },
+                  { "required": ["kerberos_keytab"] },
+                  { "required": ["kerberos_ccache"] }
                 ]
               }
             },
             {
+              "title": "OAuth2",
               "required": [
                 "client_id",
                 "client_secret",
                 "token_url"
               ],
               "not": {
-                "required": [
-                  "username",
-                  "password"
+                "anyOf": [
+                  { "required": ["domain"] },
+                  { "required": ["kerberos_realm"] },
+                  { "required": ["kerberos_keytab"] },
+                  { "required": ["kerberos_ccache"] }
+                ]
+              }
+            },
+            {
+              "title": "Kerberos Password Auth",
+              "required": [
+                "username",
+                "password",
+                "kerberos_realm"
+              ],
+              "not": {
+                "anyOf": [
+                  { "required": ["client_id"] },
+                  { "required": ["domain"] },
+                  { "required": ["kerberos_keytab"] },
+                  { "required": ["kerberos_ccache"] }
+                ]
+              }
+            },
+            {
+              "title": "Kerberos Keytab Auth",
+              "required": [
+                "username",
+                "kerberos_keytab",
+                "kerberos_realm"
+              ],
+              "not": {
+                "anyOf": [
+                  { "required": ["client_id"] },
+                  { "required": ["domain"] },
+                  { "required": ["password"] },
+                  { "required": ["kerberos_ccache"] }
+                ]
+              }
+            },
+            {
+              "title": "Kerberos CCache Auth",
+              "required": [
+                "kerberos_ccache"
+              ],
+              "not": {
+                "anyOf": [
+                  { "required": ["client_id"] },
+                  { "required": ["domain"] },
+                  { "required": ["password"] },
+                  { "required": ["kerberos_keytab"] }
                 ]
               }
             }
