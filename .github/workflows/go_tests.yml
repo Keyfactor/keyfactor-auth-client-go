@@ -11,8 +11,6 @@ jobs:
     strategy:
       matrix:
         environment:
-#          - "KFC_10_5_0"
-#          - "KFC_12_3_0_KC"
             - "ses_2441"
     environment: ${{ matrix.environment }}
     steps:

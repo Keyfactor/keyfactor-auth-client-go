@@ -41,6 +41,12 @@ type Server struct {
 	CACertPath    string       `json:"ca_cert_path,omitempty" yaml:"ca_cert_path,omitempty"`       // CACertPath is the path to the CA certificate to trust.
 	AuthType      string       `json:"auth_type,omitempty" yaml:"auth_type,omitempty"`             // AuthType is the type of authentication to use.
 
+	// Kerberos authentication fields
+	KerberosRealm  string `json:"kerberos_realm,omitempty" yaml:"kerberos_realm,omitempty"`   // KerberosRealm is the Kerberos realm (uppercase).
+	KerberosKeytab string `json:"kerberos_keytab,omitempty" yaml:"kerberos_keytab,omitempty"` // KerberosKeytab is the path to the keytab file.
+	KerberosConfig string `json:"kerberos_config,omitempty" yaml:"kerberos_config,omitempty"` // KerberosConfig is the path to krb5.conf.
+	KerberosCCache string `json:"kerberos_ccache,omitempty" yaml:"kerberos_ccache,omitempty"` // KerberosCCache is the path to the credential cache.
+	KerberosSPN    string `json:"kerberos_spn,omitempty" yaml:"kerberos_spn,omitempty"`       // KerberosSPN is the Service Principal Name.
 }
 
 // AuthProvider represents the authentication provider configuration.
@@ -215,7 +221,12 @@ func (s *Server) Compare(other *Server) bool {
 		s.APIPath == other.APIPath &&
 		s.SkipTLSVerify == other.SkipTLSVerify &&
 		s.CACertPath == other.CACertPath &&
-		s.AuthType == other.AuthType
+		s.AuthType == other.AuthType &&
+		s.KerberosRealm == other.KerberosRealm &&
+		s.KerberosKeytab == other.KerberosKeytab &&
+		s.KerberosConfig == other.KerberosConfig &&
+		s.KerberosCCache == other.KerberosCCache &&
+		s.KerberosSPN == other.KerberosSPN
 }
 
 // MergeConfigFromFile merges the configuration from a file into the existing Config.
@@ -253,6 +264,8 @@ func MergeConfigFromFile(filePath string, config *Config) (*Config, error) {
 func (s *Server) GetAuthType() string {
 	if (s.ClientID != "" && s.ClientSecret != "") || s.AccessToken != "" {
 		s.AuthType = "oauth"
+	} else if s.KerberosRealm != "" || s.KerberosKeytab != "" || s.KerberosCCache != "" {
+		s.AuthType = "kerberos"
 	} else if s.Username != "" && s.Password != "" {
 		s.AuthType = "basic"
 	} else {
@@ -323,6 +336,40 @@ func (s *Server) GetOAuthClientConfig() (*CommandConfigOauth, error) {
 		return nil, vErr
 	}
 	return &oauthConfig, nil
+}
+
+// GetKerberosClientConfig returns the Kerberos configuration for the client.
+func (s *Server) GetKerberosClientConfig() (*CommandAuthConfigKerberos, error) {
+	configType := s.GetAuthType()
+	if configType != "kerberos" {
+		return nil, fmt.Errorf("invalid auth type: %s", configType)
+	}
+	baseConfig := CommandAuthConfig{}
+	baseConfig.
+		WithCommandHostName(s.Host).
+		WithCommandPort(s.Port).
+		WithCommandAPIPath(s.APIPath).
+		WithCommandCACert(s.CACertPath).
+		WithSkipVerify(s.SkipTLSVerify)
+
+	kerberosConfig := CommandAuthConfigKerberos{
+		CommandAuthConfig: baseConfig,
+	}
+	kerberosConfig.
+		WithUsername(s.Username).
+		WithPassword(s.Password).
+		WithRealm(s.KerberosRealm).
+		WithKeytabPath(s.KerberosKeytab).
+		WithConfigPath(s.KerberosConfig).
+		WithCCachePath(s.KerberosCCache).
+		WithSPN(s.KerberosSPN).
+		Build()
+
+	vErr := kerberosConfig.ValidateAuthConfig()
+	if vErr != nil {
+		return nil, vErr
+	}
+	return &kerberosConfig, nil
 }
 
 // Example usage of Config

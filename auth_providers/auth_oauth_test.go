@@ -342,14 +342,14 @@ func TestCommandConfigOauth_Authenticate(t *testing.T) {
 	t.Log("Testing oAuth with invalid creds implicit config file")
 	invProfileCreds := &auth_providers.CommandConfigOauth{}
 	invProfileCreds.
-		WithConfigProfile("oauth_invalid_creds").
+		WithConfigProfile("oauth-invalid-creds").
 		WithSkipVerify(true)
 	authOauthTest(t, "with invalid creds implicit config file", true, invProfileCreds, invalidCredsExpectedError...)
 
 	t.Log("Testing oAuth with invalid Command host implicit config file")
 	invCmdHost := &auth_providers.CommandConfigOauth{}
 	invCmdHost.
-		WithConfigProfile("oauth_invalid_host").
+		WithConfigProfile("oauth-invalid-host").
 		WithSkipVerify(true)
 	invHostExpectedError := []string{"no such host"}
 	authOauthTest(t, "with invalid creds implicit config file", true, invCmdHost, invHostExpectedError...)

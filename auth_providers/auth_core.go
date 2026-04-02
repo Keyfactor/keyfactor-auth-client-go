@@ -152,6 +152,11 @@ type CommandAuthConfig struct {
 	//DefaultHttpClient *http.Client
 }
 
+// GetCommandVersion returns the Keyfactor Command product version detected during authentication.
+func (c CommandAuthConfig) GetCommandVersion() string {
+	return c.CommandVersion
+}
+
 // cleanHostName cleans the hostname for authentication to Keyfactor Command API.
 func cleanHostName(hostName string) string {
 	// check if hostname is a URL and if so, extract the hostname

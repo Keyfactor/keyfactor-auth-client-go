@@ -39,14 +39,30 @@ Currently `Basic Authentication` via `Active Directory` is the *ONLY* supported 
 | KEYFACTOR_AUTH_ACCESS_TOKEN  | Access token to use to authenticate to Keyfactor Command API. This can be supplied directly or generated via client credentials |          |
 | KEYFACTOR_AUTH_CA_CERT       | Either a file path or PEM encoded string to a CA certificate to use when connecting to Keyfactor Auth                           |          |
 
+### Kerberos/SPNEGO Authentication
+
+Kerberos authentication supports three methods: credential cache (ccache), keytab file, or username/password. The authentication method is determined automatically based on which credentials are provided, with the following priority: ccache > keytab > password.
+
+| Name                              | Description                                                                                        | Default           |
+|-----------------------------------|----------------------------------------------------------------------------------------------------|-------------------|
+| KEYFACTOR_AUTH_KRB_USERNAME       | Kerberos principal (username or user@REALM format)                                                 |                   |
+| KEYFACTOR_AUTH_KRB_PASSWORD       | Password for password-based Kerberos authentication                                                |                   |
+| KEYFACTOR_AUTH_KRB_REALM          | Kerberos realm (uppercase, e.g., EXAMPLE.COM). Can be implied from username if using user@REALM    |                   |
+| KEYFACTOR_AUTH_KRB_KEYTAB         | Path to keytab file for keytab-based authentication                                                |                   |
+| KEYFACTOR_AUTH_KRB_CONFIG         | Path to krb5.conf file                                                                             | `/etc/krb5.conf`  |
+| KEYFACTOR_AUTH_KRB_CCACHE         | Path to credential cache file for ccache-based authentication                                      |                   |
+| KEYFACTOR_AUTH_KRB_SPN            | Service Principal Name (optional, auto-generated as HTTP/hostname if not specified)                |                   |
+| KEYFACTOR_AUTH_KRB_DISABLE_PAFXFAST | Set to `true` to disable PA-FX-FAST for Active Directory compatibility                           | `false`           |
+
 ### Test Environment Variables
 
 These environment variables are used to run go tests. They are not used in the actual client library.
 
-| Name                   | Description                                           | Default |
-|------------------------|-------------------------------------------------------|---------|
-| TEST_KEYFACTOR_AD_AUTH | Set to `true` to test Active Directory authentication | false   |
-| TEST_KEYFACTOR_KC_AUTH | Set to `true` to test Keycloak authentication         | false   |
+| Name                    | Description                                           | Default |
+|-------------------------|-------------------------------------------------------|---------|
+| TEST_KEYFACTOR_AD_AUTH  | Set to `true` to test Active Directory authentication | false   |
+| TEST_KEYFACTOR_KC_AUTH  | Set to `true` to test Keycloak authentication         | false   |
+| TEST_KEYFACTOR_KRB_AUTH | Set to `true` to test Kerberos authentication         | false   |
 
 ## Configuration File
 
@@ -153,6 +169,55 @@ servers:
     api_path: KeyfactorAPI
 ```
 
+### Kerberos/SPNEGO
+
+#### JSON (with keytab)
+
+```json
+{
+  "servers": {
+    "default": {
+      "host": "keyfactor.command.kfdelivery.com",
+      "username": "svc_keyfactor",
+      "kerberos_realm": "EXAMPLE.COM",
+      "kerberos_keytab": "/etc/keytabs/svc_keyfactor.keytab",
+      "kerberos_config": "/etc/krb5.conf",
+      "api_path": "KeyfactorAPI"
+    }
+  }
+}
+```
+
+#### JSON (with password)
+
+```json
+{
+  "servers": {
+    "default": {
+      "host": "keyfactor.command.kfdelivery.com",
+      "username": "user@EXAMPLE.COM",
+      "password": "password",
+      "kerberos_realm": "EXAMPLE.COM",
+      "kerberos_config": "/etc/krb5.conf",
+      "api_path": "KeyfactorAPI"
+    }
+  }
+}
+```
+
+#### YAML (with keytab)
+
+```yaml
+servers:
+  default:
+    host: keyfactor.command.kfdelivery.com
+    username: svc_keyfactor
+    kerberos_realm: EXAMPLE.COM
+    kerberos_keytab: /etc/keytabs/svc_keyfactor.keytab
+    kerberos_config: /etc/krb5.conf
+    api_path: KeyfactorAPI
+```
+
 ## Configuration File Providers
 
 Below are a list of configuration file providers that can be used to load configuration from a file if loading from disk
@@ -205,4 +270,128 @@ servers:
       parameters:
         secret_name: <akv_secret_name>
         vault_name: <akv_vault_name>
+```
+
+# Testing
+
+To run the tests you'll need to provide a `${HOME}/.keyfactor/command_config.json` file for some of the tests to use. 
+
+## Example:
+
+```json
+{
+  "servers": {
+    "default": {
+      "host": "<insert keyfactor command hostname>",
+      "port": 443,
+      "client_id": "<insert valid client_id>",
+      "client_secret": "<insert valid client_secret>",
+      "token_url": "https://<insert oauth2 token endpoint hostname>/oauth2/token",
+      "api_path": "Keyfactor/API",
+      "auth_provider": {},
+      "skip_tls_verify": true,
+      "auth_type": "oauth"
+    },
+    "basic-auth": {
+      "host": "<insert valid keyfactor command hostname>",
+      "port": 443,
+      "username": "<insert valid keyfactor command username>",
+      "password": "<insert valid keyfactor command password>",
+      "domain": "<insert valid AD domain name>",
+      "api_path": "KeyfactorAPI",
+      "auth_provider": {},
+      "skip_tls_verify": true,
+      "auth_type": "basic"
+    },
+    "default": {
+      "host": "<insert valid keyfactor command hostname>",
+      "port": 443,
+      "username": "<insert valid keyfactor command username>",
+      "password": "<insert valid keyfactor command password>",
+      "domain": "<insert valid AD domain name>",
+      "api_path": "KeyfactorAPI",
+      "auth_provider": {},
+      "skip_tls_verify": true,
+      "auth_type": "basic"
+    },
+    "invalid-host": {
+      "host": "<insert valid keyfactor command hostname>",
+      "port": 443,
+      "username": "<insert valid keyfactor command username>",
+      "password": "<insert valid keyfactor command password>",
+      "domain": "<insert valid AD domain name>",
+      "api_path": "KeyfactorAPI",
+      "auth_provider": {},
+      "skip_tls_verify": true,
+      "auth_type": "basic"
+    },
+    "invalid-username": {
+      "host": "<insert valid keyfactor command hostname>",
+      "port": 443,
+      "username": "invalid",
+      "password": "<insert valid keyfactor command password>",
+      "domain": "<insert valid AD domain name>",
+      "api_path": "KeyfactorAPI",
+      "auth_provider": {},
+      "skip_tls_verify": true,
+      "auth_type": "basic"
+    },
+    "invalid-password": {
+      "host": "<insert valid keyfactor command hostname>",
+      "port": 443,
+      "username": "<insert valid keyfactor command username>",
+      "password": "invalid",
+      "domain": "<insert valid AD domain name>",
+      "api_path": "KeyfactorAPI",
+      "auth_provider": {},
+      "skip_tls_verify": true,
+      "auth_type": "basic"
+    },
+    "oauth": {
+      "host": "<insert keyfactor command hostname>",
+      "port": 443,
+      "client_id": "<insert valid client_id>",
+      "client_secret": "<insert valid client_secret>",
+      "token_url": "https://<insert oauth2 token endpoint hostname>/oauth2/token",
+      "api_path": "Keyfactor/API",
+      "auth_provider": {},
+      "skip_tls_verify": true,
+      "auth_type": "oauth"
+    },
+    "oauth-invalid-creds": {
+      "host": "<insert keyfactor command hostname>",
+      "port": 443,
+      "client_id": "invalid",
+      "client_secret": "invalid",
+      "token_url": "https://<insert oauth2 token endpoint hostname>/oauth2/token",
+      "api_path": "Keyfactor/API",
+      "auth_provider": {},
+      "skip_tls_verify": true,
+      "auth_type": "oauth"
+    },
+    "oauth-invalid-host": {
+      "host": "invalid.localhost.dev",
+      "port": 443,
+      "client_id": "<insert valid client_id>",
+      "client_secret": "<insert valid client_secret>",
+      "token_url": "https://<insert oauth2 token endpoint hostname>/oauth2/token",
+      "api_path": "Keyfactor/API",
+      "auth_provider": {},
+      "skip_tls_verify": true,
+      "auth_type": "oauth"
+    },
+    "oauth-skiptls": {
+      "host": "<insert keyfactor command hostname>",
+      "port": 443,
+      "client_id": "<insert valid client_id>",
+      "client_secret": "<insert valid client_secret>",
+      "token_url": "https://<insert oauth2 token endpoint hostname>/oauth2/token",
+      "api_path": "Keyfactor/API",
+      "auth_provider": {},
+      "skip_tls_verify": true,
+      "auth_type": "oauth"
+    }
+  }
+}
+
 ```
