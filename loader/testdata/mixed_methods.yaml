@@ -1,0 +1,11 @@
+# Command authenticated via OAuth2, ACME via a static bearer issued
+# out-of-band. Different auth methods per tool sub-block.
+servers:
+  default:
+    host: command.example.com
+    client_id: command-svc
+    client_secret: command-rotate
+    token_url: https://command-auth.internal/oauth/token
+    acme:
+      base_url: https://acme.example.com/acme-admin
+      access_token: eyJhbGc-acme-static-token

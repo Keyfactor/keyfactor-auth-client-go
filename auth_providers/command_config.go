@@ -47,6 +47,19 @@ type Server struct {
 	KerberosConfig string `json:"kerberos_config,omitempty" yaml:"kerberos_config,omitempty"` // KerberosConfig is the path to krb5.conf.
 	KerberosCCache string `json:"kerberos_ccache,omitempty" yaml:"kerberos_ccache,omitempty"` // KerberosCCache is the path to the credential cache.
 	KerberosSPN    string `json:"kerberos_spn,omitempty" yaml:"kerberos_spn,omitempty"`       // KerberosSPN is the Service Principal Name.
+
+	// Extras holds per-tool sub-blocks decoded alongside the canonical
+	// fields. Populated by the loader subpackage when consumers register
+	// their tool namespaces. Direct access is uncommon — prefer
+	// loader.DecodeExtras(namespace, target).
+	//
+	// The `mapstructure:",remain"` tag tells mapstructure (used by Viper
+	// inside the loader) to put any keys it doesn't recognize from the
+	// parent struct into this map, preserving them across read/write
+	// cycles. The json/yaml `-` tags keep Extras out of the canonical
+	// wire format for the existing ReadConfig*/WriteConfig* paths; the
+	// loader handles sub-block serialization separately.
+	Extras map[string]any `json:"-" yaml:"-" mapstructure:",remain"`
 }
 
 // AuthProvider represents the authentication provider configuration.

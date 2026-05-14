@@ -1,0 +1,17 @@
+servers:
+  default:
+    host: command.example.com
+    api_path: KeyfactorAPI
+    client_id: shared-svc
+    client_secret: shared-rotate
+    token_url: https://auth.example.com/oauth/token
+    acme:
+      base_url: https://acme.example.com/acme-admin
+      output: cli
+  staging:
+    host: command-staging.example.com
+    client_id: staging-svc
+    client_secret: staging-rotate
+    token_url: https://auth-staging.example.com/oauth/token
+    acme:
+      base_url: https://acme-staging.example.com/acme-admin
