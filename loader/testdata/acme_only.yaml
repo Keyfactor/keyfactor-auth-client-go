@@ -1,0 +1,10 @@
+# ACME-only profile: no Command host, no api_path. Loader must accept
+# this and validate ACME auth without complaining about the missing
+# Command target fields — that's each tool's job to enforce.
+servers:
+  default:
+    client_id: acme-svc
+    client_secret: acme-rotate
+    token_url: https://auth.example.com/oauth/token
+    acme:
+      base_url: https://acme.example.com/acme-admin
