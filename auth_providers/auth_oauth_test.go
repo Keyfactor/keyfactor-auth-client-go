@@ -1,4 +1,4 @@
-// Copyright 2024 Keyfactor
+// Copyright 2026 Keyfactor
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -16,13 +16,16 @@ package auth_providers_test
 
 import (
 	"crypto/tls"
+	"encoding/json"
 	"encoding/pem"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/Keyfactor/keyfactor-auth-client-go/auth_providers"
@@ -567,4 +570,50 @@ func DownloadCertificate(input string, outputPath string) error {
 
 	fmt.Printf("Certificate chain saved to: %s\n", outputFile)
 	return nil
+}
+
+func TestCommandConfigOauth_TokenSourceIsReused(t *testing.T) {
+	var tokenRequestCount atomic.Int32
+
+	// Fake IdP token endpoint
+	tokenServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		tokenRequestCount.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"access_token": "shared-test-token",
+			"token_type":   "Bearer",
+			"expires_in":   3600,
+		})
+	}))
+	defer tokenServer.Close()
+
+	// Fake API endpoint (just needs to accept requests)
+	apiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer apiServer.Close()
+
+	config := &auth_providers.CommandConfigOauth{
+		ClientID:     "test-client-id",
+		ClientSecret: "test-client-secret",
+		TokenURL:     tokenServer.URL + "/token",
+	}
+
+	// Get multiple clients from the same config
+	const numClients = 3
+	for i := 0; i < numClients; i++ {
+		client, err := config.GetHttpClient()
+		if err != nil {
+			t.Fatalf("GetHttpClient() call %d failed: %v", i+1, err)
+		}
+		resp, err := client.Get(apiServer.URL)
+		if err != nil {
+			t.Fatalf("request %d failed: %v", i+1, err)
+		}
+		resp.Body.Close()
+	}
+
+	if tokenRequestCount.Load() != 1 {
+		t.Errorf("expected token endpoint to be called once, got %d — token source is not being reused across GetHttpClient() calls", tokenRequestCount.Load())
+	}
 }

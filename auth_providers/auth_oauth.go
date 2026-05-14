@@ -1,4 +1,4 @@
-// Copyright 2024 Keyfactor
+// Copyright 2026 Keyfactor
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -22,6 +22,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"golang.org/x/oauth2"
@@ -115,6 +116,10 @@ type CommandConfigOauth struct {
 
 	// TokenURL is the token URL for OAuth authentication
 	TokenURL string `json:"token_url,omitempty" yaml:"token_url,omitempty"`
+
+	// unexported: lazily initialized, shared across GetHttpClient() calls
+	tokenSource oauth2.TokenSource
+	tsMu        sync.Mutex
 }
 
 // NewOAuthAuthenticatorBuilder creates a new CommandConfigOauth instance.
@@ -222,7 +227,15 @@ func (b *CommandConfigOauth) GetHttpClient() (*http.Client, error) {
 	}
 
 	ctx := context.WithValue(context.Background(), oauth2.HTTPClient, &http.Client{Transport: baseTransport})
-	tokenSource := config.TokenSource(ctx)
+
+	// Lazily initialize the token source and cache it
+	b.tsMu.Lock()
+	if b.tokenSource == nil {
+		log.Printf("[DEBUG] Initializing OAuth2 token source for client ID: %s", b.ClientID)
+		b.tokenSource = config.TokenSource(ctx)
+	}
+	tokenSource := b.tokenSource
+	b.tsMu.Unlock()
 
 	client = http.Client{
 		Transport: &oauth2Transport{
