@@ -653,3 +653,58 @@ func TestRequestToCurl_BodyRedaction(t *testing.T) {
 		t.Logf("%s: curl command: %s", tt.name, curlStr)
 	}
 }
+
+// TestCommandAuthConfig_MaxConnsPerHost_Unbounded is a regression test for a
+// global-concurrency-cap bug: newHTTPTransport() hardcoded
+// MaxConnsPerHost: 10. That was harmless as long as every request built its
+// own throwaway transport, but consumers (e.g. keyfactor-go-client) now
+// correctly cache and reuse a single *http.Client/*http.Transport across all
+// requests to fix a socket leak -- which turns MaxConnsPerHost: 10 into a
+// hard ceiling of 10 concurrent in-flight requests per host, no matter how
+// much client-side parallelism (e.g. `terraform apply -parallelism=25`)
+// callers configure. Since the returned client has Timeout: 0 and requests
+// carry no context deadline, requests beyond the 10th queue with no bound.
+//
+// MaxConnsPerHost must match net/http.DefaultTransport's unbounded default
+// (0), while the idle-connection pool limits (which bound long-term resource
+// retention, not concurrency) stay as configured.
+func TestCommandAuthConfig_MaxConnsPerHost_Unbounded(t *testing.T) {
+	config := &auth_providers.CommandAuthConfig{
+		CommandHostName: "test-host",
+		CommandPort:     443,
+		CommandAPIPath:  "KeyfactorAPI",
+	}
+
+	t.Run("BuildTransport", func(t *testing.T) {
+		transport, err := config.BuildTransport()
+		if err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+		if transport.MaxConnsPerHost != 0 {
+			t.Fatalf("expected MaxConnsPerHost to be unbounded (0), got %d", transport.MaxConnsPerHost)
+		}
+		if transport.MaxIdleConns != 10 {
+			t.Fatalf("expected MaxIdleConns to stay at 10, got %d", transport.MaxIdleConns)
+		}
+		if transport.MaxIdleConnsPerHost != 10 {
+			t.Fatalf("expected MaxIdleConnsPerHost to stay at 10, got %d", transport.MaxIdleConnsPerHost)
+		}
+	})
+
+	t.Run("SetClient", func(t *testing.T) {
+		client := config.SetClient(nil)
+		transport, ok := client.Transport.(*http.Transport)
+		if !ok {
+			t.Fatalf("expected client.Transport to be *http.Transport, got %T", client.Transport)
+		}
+		if transport.MaxConnsPerHost != 0 {
+			t.Fatalf("expected MaxConnsPerHost to be unbounded (0), got %d", transport.MaxConnsPerHost)
+		}
+		if transport.MaxIdleConns != 10 {
+			t.Fatalf("expected MaxIdleConns to stay at 10, got %d", transport.MaxIdleConns)
+		}
+		if transport.MaxIdleConnsPerHost != 10 {
+			t.Fatalf("expected MaxIdleConnsPerHost to stay at 10, got %d", transport.MaxIdleConnsPerHost)
+		}
+	})
+}

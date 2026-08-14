@@ -390,7 +390,20 @@ func (c *CommandAuthConfig) newHTTPTransport() *http.Transport {
 		ExpectContinueTimeout: DefaultExpectContinueTimeout,
 		MaxIdleConns:          10,
 		MaxIdleConnsPerHost:   10,
-		MaxConnsPerHost:       10,
+		// MaxConnsPerHost is intentionally left at 0 (unbounded, matching
+		// net/http.DefaultTransport). This transport is now cached and reused
+		// as a single long-lived *http.Client/*http.Transport by callers (to
+		// fix a socket-leak bug where a fresh transport was built per
+		// request), so a nonzero MaxConnsPerHost here would become a hard,
+		// unqueued-timeout ceiling on concurrent in-flight requests per host
+		// for the lifetime of the process -- e.g. `terraform apply
+		// -parallelism=25` would silently serialize into batches of N with no
+		// bound on how long excess requests wait, since neither this client's
+		// Timeout nor its requests' contexts impose one. MaxIdleConns/
+		// MaxIdleConnsPerHost above still bound long-term idle-socket
+		// retention, which is the resource concern MaxConnsPerHost was
+		// presumably added for.
+		MaxConnsPerHost: 0,
 	}
 }
 
