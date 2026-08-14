@@ -911,6 +911,26 @@ const redactedPlaceholder = "***REDACTED***"
 // generated curl command. This covers the Keyfactor Command API's
 // credential-bearing request fields (certificate enrollment/PFX passwords,
 // PAM secret values, etc.) as well as common OAuth2 token exchange fields.
+//
+// "value" is deliberately blanket-redacted rather than only when nested under
+// a credential-bearing parent key (e.g. PAM's ProviderTypeParamValues): it is
+// how PAM provider creation carries its secret
+// (ProviderCreateRequestTypeParamValue.Value), and this redactor walks
+// structure generically without tracking which object it's currently inside,
+// so a parent-key allowlist would need its own maintenance burden and would
+// still miss any future generic-"Value" secret field. "value" as a bare key
+// name is not common enough elsewhere in the Command API surface to justify
+// that risk, and the surrounding key names (e.g. the parameter name and
+// ProviderTypeParamValues itself) remain visible, so little diagnostic value
+// is actually lost.
+//
+// "properties" is deliberately NOT in this set: certificate stores serialize
+// their entire (mostly non-secret) Properties map into a single JSON-encoded
+// string field, and blanket-redacting it would hide store configuration
+// (container names, client machine paths, etc.) that's routinely needed for
+// diagnostics. Instead, redactJSONValue re-parses JSON-encoded string values
+// (see below) and redacts sensitive keys *within* Properties, preserving the
+// rest of its structure.
 var sensitiveBodyKeys = map[string]struct{}{
 	"password":                {},
 	"pfxpassword":             {},
@@ -918,10 +938,16 @@ var sensitiveBodyKeys = map[string]struct{}{
 	"entrypassword":           {},
 	"explicitpassword":        {},
 	"authcertificatepassword": {},
+	"newpassword":             {},
+	"serverpassword":          {},
+	"storepassword":           {},
+	"relaypassword":           {},
 	"passphrase":              {},
 	"privatekey":              {},
+	"pkcs12blob":              {},
 	"secret":                  {},
 	"secretvalue":             {},
+	"value":                   {},
 	"clientsecret":            {},
 	"client_secret":           {},
 	"accesstoken":             {},
@@ -939,12 +965,43 @@ func isSensitiveBodyKey(key string) bool {
 	return ok
 }
 
+const (
+	// maxNestedJSONStringDepth bounds how many levels of JSON-encoded-string
+	// nesting redactJSONValue will unwrap (e.g. a JSON body whose string
+	// field is itself a JSON document whose string field is itself JSON,
+	// and so on -- exactly how keyfactor-go-client encodes a certificate
+	// store's Properties map). This is unrelated to, and does not limit,
+	// ordinary object/array nesting depth; it only bounds re-parsing a
+	// string value as a fresh JSON document, which is what makes
+	// pathological/adversarial nesting expensive. It defends against a body
+	// crafted to smuggle a secret past redaction via deep string-in-string
+	// nesting.
+	maxNestedJSONStringDepth = 6
+
+	// maxNestedJSONStringLen bounds the size of a string value redactJSONValue
+	// will attempt to re-parse as nested JSON, so a single request log line
+	// can't be forced to do unbounded parsing work on an attacker-controlled
+	// multi-megabyte string.
+	maxNestedJSONStringLen = 1 << 20 // 1 MiB
+)
+
 // redactJSONValue walks a value decoded from JSON (map[string]interface{},
 // []interface{}, or a scalar) and returns a copy with the values of any
 // sensitive keys replaced by redactedPlaceholder. Structure (object/array
 // nesting) is preserved so the rest of the body remains useful for
 // diagnostics.
+//
+// String values that look like a JSON document (e.g. a certificate store's
+// Properties field, which keyfactor-go-client marshals into a JSON-encoded
+// string rather than a nested object) are recursively re-parsed and redacted
+// the same way, up to maxNestedJSONStringDepth levels deep -- otherwise a
+// sensitive field nested inside such a string would never be inspected at
+// all, since its key name is invisible until the string is parsed.
 func redactJSONValue(v interface{}) interface{} {
+	return redactJSONValueAtDepth(v, 0)
+}
+
+func redactJSONValueAtDepth(v interface{}, nestedStringDepth int) interface{} {
 	switch val := v.(type) {
 	case map[string]interface{}:
 		out := make(map[string]interface{}, len(val))
@@ -953,18 +1010,77 @@ func redactJSONValue(v interface{}) interface{} {
 				out[k] = redactedPlaceholder
 				continue
 			}
-			out[k] = redactJSONValue(vv)
+			out[k] = redactJSONValueAtDepth(vv, nestedStringDepth)
 		}
 		return out
 	case []interface{}:
 		out := make([]interface{}, len(val))
 		for i, vv := range val {
-			out[i] = redactJSONValue(vv)
+			out[i] = redactJSONValueAtDepth(vv, nestedStringDepth)
 		}
 		return out
+	case string:
+		return redactNestedJSONString(val, nestedStringDepth)
 	default:
 		return val
 	}
+}
+
+// looksLikeJSONDocument reports whether s is plausibly a JSON object or
+// array, based solely on its outermost delimiters. It is intentionally cheap
+// and permissive (an unbalanced-but-bracketed string will still attempt to
+// parse and fail cleanly in redactNestedJSONString) so that every candidate
+// gets a real parse attempt rather than being skipped on a heuristic and
+// potentially leaking a secret verbatim.
+func looksLikeJSONDocument(s string) bool {
+	t := strings.TrimSpace(s)
+	if len(t) < 2 {
+		return false
+	}
+	return (t[0] == '{' && t[len(t)-1] == '}') || (t[0] == '[' && t[len(t)-1] == ']')
+}
+
+// redactNestedJSONString handles a single string value encountered while
+// walking a decoded JSON body. Strings that don't look like a JSON document
+// are left untouched. Strings that do are re-parsed and redacted like any
+// other JSON value and re-serialized -- unless doing so isn't safe (parse
+// failure, or the depth/size guards below are hit), in which case the whole
+// value is replaced with redactedPlaceholder rather than ever emitting a
+// string that looked like it might contain structured secret data.
+func redactNestedJSONString(s string, nestedStringDepth int) interface{} {
+	if !looksLikeJSONDocument(s) {
+		return s
+	}
+
+	if nestedStringDepth >= maxNestedJSONStringDepth {
+		log.Printf(
+			"[WARN] request body redaction: JSON-in-string nesting exceeded max depth %d; redacting the value entirely rather than risk an unredacted secret",
+			maxNestedJSONStringDepth,
+		)
+		return redactedPlaceholder
+	}
+	if len(s) > maxNestedJSONStringLen {
+		log.Printf(
+			"[WARN] request body redaction: JSON-in-string value exceeded %d bytes; redacting the value entirely rather than risk an unredacted secret",
+			maxNestedJSONStringLen,
+		)
+		return redactedPlaceholder
+	}
+
+	var parsed interface{}
+	if err := json.Unmarshal([]byte(s), &parsed); err != nil {
+		// Looks like JSON (balanced outer brackets) but doesn't actually
+		// parse -- could be a truncated or malformed secret-bearing
+		// fragment. Never emit it raw.
+		return redactedPlaceholder
+	}
+
+	redacted := redactJSONValueAtDepth(parsed, nestedStringDepth+1)
+	out, err := json.Marshal(redacted)
+	if err != nil {
+		return redactedPlaceholder
+	}
+	return string(out)
 }
 
 // opaqueBodyMarker renders the safe placeholder used whenever a request
@@ -980,14 +1096,22 @@ func opaqueBodyMarker(contentType string, size int) string {
 }
 
 // redactRequestBody renders a safe, loggable representation of an HTTP
-// request body for inclusion in a generated curl command. It never returns
-// the raw body verbatim unless every key it found was checked against
-// sensitiveBodyKeys and none matched. JSON bodies are parsed and
-// re-serialized with sensitive values replaced; form-encoded bodies (e.g.
-// OAuth2 client_credentials token requests carrying client_secret) have
-// sensitive form values replaced. Any body that can't be safely classified
-// -- including a body declared as JSON that fails to parse -- is omitted
-// entirely behind opaqueBodyMarker rather than risking a raw secret leak.
+// request body for inclusion in a generated curl command. JSON bodies are
+// parsed and re-serialized with sensitive values replaced; form-encoded
+// bodies (e.g. OAuth2 client_credentials token requests carrying
+// client_secret) have sensitive form values replaced. Any body that can't be
+// safely classified -- including a body declared as JSON that fails to parse
+// -- is omitted entirely behind opaqueBodyMarker rather than risking a raw
+// secret leak.
+//
+// A field name being absent from sensitiveBodyKeys is not by itself proof a
+// value is safe to print: the Keyfactor Command API also carries secrets
+// inside ordinary JSON string values that are themselves JSON documents
+// (e.g. a certificate store's Properties field). redactJSONValue re-parses
+// and redacts those recursively (bounded by maxNestedJSONStringDepth/
+// maxNestedJSONStringLen) rather than treating a string as an opaque scalar,
+// so a sensitive key hidden inside such a string is still found and
+// redacted.
 func redactRequestBody(contentType string, body []byte) string {
 	if len(body) == 0 {
 		return ""

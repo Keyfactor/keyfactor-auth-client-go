@@ -790,6 +790,70 @@ func TestRequestToCurl_BodyRedaction(t *testing.T) {
 				`\"Template\":\"WebServer\"`,
 			},
 		},
+		{
+			// Confirmed leak path 1: keyfactor-go-client v3 marshals a
+			// certificate store's Properties map into a JSON-encoded STRING
+			// field (store_models.go PropertiesString, json:"Properties";
+			// see store.go). terraform-provider-keyfactor puts
+			// ServerPassword in that map, and for K8S store types this field
+			// can carry an entire kubeconfig or service-account token.
+			// Because redaction only inspected each value's own key against
+			// sensitiveBodyKeys, and never re-parsed a string value that was
+			// itself JSON, ServerPassword's nested SecretValue was emitted
+			// verbatim.
+			name:        "certificate store Properties JSON-encoded-string leak",
+			contentType: "application/json",
+			body:        `{"ClientMachine":"k8s","Properties":"{\"ServerPassword\":{\"value\":{\"SecretValue\":\"SuperSecret123\"}}}","Password":{"SecretValue":"StorePw!"}}`,
+			wantInCurl: []string{
+				"ClientMachine",
+				"k8s",
+				"Properties",
+				"ServerPassword",
+				"REDACTED",
+			},
+			notWantInCurl: []string{
+				"SuperSecret123",
+				"StorePw!",
+			},
+		},
+		{
+			// Confirmed leak path 2: PAM provider creation carries the
+			// secret under the generic key "Value"
+			// (ProviderCreateRequestTypeParamValue.Value, pam_types_models.go),
+			// nested under the ordinary key ProviderTypeParamValues. "value"
+			// was not in sensitiveBodyKeys, so a Vault token/Delinea
+			// password was logged verbatim.
+			name:        "PAM ProviderTypeParamValues generic Value key leak",
+			contentType: "application/json",
+			body:        `{"Name":"my-pam-provider","ProviderTypeParamValues":{"Vault-Token":{"Value":"hvs.CONFIDENTIALVAULTTOKEN"}}}`,
+			wantInCurl: []string{
+				"my-pam-provider",
+				"ProviderTypeParamValues",
+				"Vault-Token",
+				"REDACTED",
+			},
+			notWantInCurl: []string{
+				"hvs.CONFIDENTIALVAULTTOKEN",
+			},
+		},
+		{
+			// A string value that merely *looks* like a JSON document (starts
+			// with '{'/'[' and ends with '}'/']') but does not actually parse
+			// must never be emitted verbatim -- it could be a
+			// truncated/malformed secret-bearing fragment. The whole value
+			// must be redacted instead of falling through to raw output.
+			name:        "malformed JSON-looking string value is redacted whole, not emitted raw",
+			contentType: "application/json",
+			body:        `{"ClientMachine":"k8s","Properties":"{ServerPassword: SuperSecret123}"}`,
+			wantInCurl: []string{
+				"ClientMachine",
+				"k8s",
+				"REDACTED",
+			},
+			notWantInCurl: []string{
+				"SuperSecret123",
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -819,6 +883,88 @@ func TestRequestToCurl_BodyRedaction(t *testing.T) {
 		}
 		t.Logf("%s: curl command: %s", tt.name, curlStr)
 	}
+}
+
+// nestJSONString wraps innermost as the value of a "Wrapper" key, levels
+// times, each wrap itself re-marshaled to JSON so quotes/backslashes are
+// escaped exactly as a real nested JSON-encoded-string field would be. The
+// result is a top-level JSON document whose "Wrapper" field must be re-parsed
+// `levels` times by redaction before the original innermost document is
+// reached -- used to probe redactJSONValue's nested-JSON-in-string recursion,
+// including its depth guard against pathological/adversarial input.
+func nestJSONString(t *testing.T, innermost string, levels int) string {
+	t.Helper()
+	current := innermost
+	for i := 0; i < levels; i++ {
+		wrapped, err := json.Marshal(map[string]string{"Wrapper": current})
+		if err != nil {
+			t.Fatalf("failed to nest JSON string at level %d: %v", i, err)
+		}
+		current = string(wrapped)
+	}
+	return current
+}
+
+// TestRequestToCurl_BodyRedaction_NestedJSONInString is a regression test
+// proving redaction recurses into JSON-encoded-string values, not just
+// object/array structure. It covers the two-levels-deep case explicitly
+// requested as a minimum (mirroring how a real Properties string could itself
+// carry a field whose value is further JSON-encoded), plus a pathological
+// depth well past any real payload to prove the depth guard never lets a
+// secret fall through to raw output.
+func TestRequestToCurl_BodyRedaction_NestedJSONInString(t *testing.T) {
+	t.Run("two levels deep", func(t *testing.T) {
+		innermost := `{"Password":"DeepSecret"}`
+		body := nestJSONString(t, innermost, 2)
+
+		req, err := http.NewRequest("POST", "https://example.com/api", strings.NewReader(body))
+		if err != nil {
+			t.Fatalf("failed to create request: %v", err)
+		}
+		req.Header.Set("Content-Type", "application/json")
+
+		curlStr, err := auth_providers.RequestToCurl(req)
+		if err != nil {
+			t.Fatalf("RequestToCurl returned error: %v", err)
+		}
+
+		if strings.Contains(curlStr, "DeepSecret") {
+			t.Fatalf("secret leaked through two levels of JSON-in-string nesting\nGot: %s", curlStr)
+		}
+		if !strings.Contains(curlStr, "REDACTED") {
+			t.Fatalf("expected the nested Password field to be redacted, found no redaction marker\nGot: %s", curlStr)
+		}
+		if !strings.Contains(curlStr, "Password") {
+			t.Fatalf("expected the Password key name to remain visible for diagnostics\nGot: %s", curlStr)
+		}
+		t.Logf("curl command: %s", curlStr)
+	})
+
+	t.Run("pathological depth never leaks the secret", func(t *testing.T) {
+		innermost := `{"Password":"DeepSecret"}`
+		// Comfortably past any sane nesting depth a real API payload would
+		// use. Each wrap re-escapes the prior level's quotes/backslashes, so
+		// the encoded size grows roughly exponentially with levels -- keep
+		// this small (10 levels is already ~1000x deeper than any real
+		// payload) to avoid an enormous test body.
+		body := nestJSONString(t, innermost, 10)
+
+		req, err := http.NewRequest("POST", "https://example.com/api", strings.NewReader(body))
+		if err != nil {
+			t.Fatalf("failed to create request: %v", err)
+		}
+		req.Header.Set("Content-Type", "application/json")
+
+		curlStr, err := auth_providers.RequestToCurl(req)
+		if err != nil {
+			t.Fatalf("RequestToCurl returned error: %v", err)
+		}
+
+		if strings.Contains(curlStr, "DeepSecret") {
+			t.Fatalf("secret leaked through pathologically deep JSON-in-string nesting\nGot: %s", curlStr)
+		}
+		t.Logf("curl command: %s", curlStr)
+	})
 }
 
 // TestCommandAuthConfig_MaxConnsPerHost_Unbounded is a regression test for a
