@@ -435,23 +435,21 @@ func (b *CommandConfigOauth) Authenticate() error {
 
 // GetServerConfig returns the server configuration for Keyfactor Command API using OAuth2.
 func (b *CommandConfigOauth) GetServerConfig() *Server {
-	server := Server{
-		Host:          b.CommandHostName,
-		Port:          b.CommandPort,
-		ClientID:      b.ClientID,
-		ClientSecret:  b.ClientSecret,
-		AccessToken:   b.AccessToken,
-		OAuthTokenUrl: b.TokenURL,
-		APIPath:       b.CommandAPIPath,
-		Scopes:        b.Scopes,
-		Audience:      b.Audience,
-		//AuthProvider:  AuthProvider{},
-		SkipTLSVerify: b.SkipVerify,
-		CACertPath:    b.CommandCACert,
-		AuthType:      "oauth",
-		ClientTimeout: b.HttpClientTimeout,
-	}
-	return &server
+	// Delegate to the embedded CommandAuthConfig for the fields it already
+	// knows how to populate correctly -- notably ClientTimeout, which must be
+	// omitted (not the ValidateAuthConfig-synthesized default) unless the
+	// caller explicitly configured it. See clientTimeoutDefaulted's doc
+	// comment on CommandAuthConfig for why persisting a synthesized default
+	// is harmful. Layer OAuth-specific fields on top.
+	server := b.CommandAuthConfig.GetServerConfig()
+	server.ClientID = b.ClientID
+	server.ClientSecret = b.ClientSecret
+	server.AccessToken = b.AccessToken
+	server.OAuthTokenUrl = b.TokenURL
+	server.Scopes = b.Scopes
+	server.Audience = b.Audience
+	server.AuthType = "oauth"
+	return server
 }
 
 // GetAccessToken returns the OAuth2 token source for the given configuration.
