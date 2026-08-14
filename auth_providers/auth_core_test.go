@@ -109,6 +109,80 @@ func TestCommandAuthConfig_ClientTimeout_BuildTransport(t *testing.T) {
 	}
 }
 
+// TestCommandAuthConfig_IdleAndExpectContinueTimeouts_NotDerivedFromClientTimeout
+// is a regression test for a resource leak: BuildTransport() and SetClient()
+// both derived IdleConnTimeout and ExpectContinueTimeout from the same
+// HttpClientTimeout value used for the request deadline
+// (ResponseHeaderTimeout). IdleConnTimeout governs how long an *idle* pooled
+// connection is retained -- it is not a request deadline -- so a large
+// configured HttpClientTimeout (e.g. 1800s, exactly what's needed for slow
+// PFX enrollments) caused idle sockets and their goroutines to be retained
+// for the full 1800s after every request, instead of net/http's normal 90s.
+// A large `terraform apply` issuing many sequential requests therefore held
+// open hundreds of sockets/goroutines for half an hour. ExpectContinueTimeout
+// has the same bug for the same reason.
+//
+// ResponseHeaderTimeout must continue to track HttpClientTimeout -- that is
+// the customer-facing fix the timeout work exists for -- while
+// IdleConnTimeout and ExpectContinueTimeout must stay pinned to fixed,
+// sane defaults (matching net/http.DefaultTransport) regardless of how large
+// HttpClientTimeout is configured.
+func TestCommandAuthConfig_IdleAndExpectContinueTimeouts_NotDerivedFromClientTimeout(t *testing.T) {
+	config := &auth_providers.CommandAuthConfig{
+		CommandHostName: "test-host",
+		CommandPort:     443,
+		CommandAPIPath:  "KeyfactorAPI",
+	}
+	config.WithClientTimeout(1800)
+
+	t.Run("BuildTransport", func(t *testing.T) {
+		transport, err := config.BuildTransport()
+		if err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+
+		if expected := 1800 * time.Second; transport.ResponseHeaderTimeout != expected {
+			t.Fatalf("expected ResponseHeaderTimeout to be %v, got %v", expected, transport.ResponseHeaderTimeout)
+		}
+		if transport.IdleConnTimeout != auth_providers.DefaultIdleConnTimeout {
+			t.Fatalf(
+				"expected IdleConnTimeout to stay pinned at the fixed default %v regardless of a 1800s HttpClientTimeout, got %v",
+				auth_providers.DefaultIdleConnTimeout, transport.IdleConnTimeout,
+			)
+		}
+		if transport.ExpectContinueTimeout != auth_providers.DefaultExpectContinueTimeout {
+			t.Fatalf(
+				"expected ExpectContinueTimeout to stay pinned at the fixed default %v regardless of a 1800s HttpClientTimeout, got %v",
+				auth_providers.DefaultExpectContinueTimeout, transport.ExpectContinueTimeout,
+			)
+		}
+	})
+
+	t.Run("SetClient", func(t *testing.T) {
+		client := config.SetClient(nil)
+		transport, ok := client.Transport.(*http.Transport)
+		if !ok {
+			t.Fatalf("expected client.Transport to be *http.Transport, got %T", client.Transport)
+		}
+
+		if expected := 1800 * time.Second; transport.ResponseHeaderTimeout != expected {
+			t.Fatalf("expected ResponseHeaderTimeout to be %v, got %v", expected, transport.ResponseHeaderTimeout)
+		}
+		if transport.IdleConnTimeout != auth_providers.DefaultIdleConnTimeout {
+			t.Fatalf(
+				"expected IdleConnTimeout to stay pinned at the fixed default %v regardless of a 1800s HttpClientTimeout, got %v",
+				auth_providers.DefaultIdleConnTimeout, transport.IdleConnTimeout,
+			)
+		}
+		if transport.ExpectContinueTimeout != auth_providers.DefaultExpectContinueTimeout {
+			t.Fatalf(
+				"expected ExpectContinueTimeout to stay pinned at the fixed default %v regardless of a 1800s HttpClientTimeout, got %v",
+				auth_providers.DefaultExpectContinueTimeout, transport.ExpectContinueTimeout,
+			)
+		}
+	})
+}
+
 // writeTimeoutConfigFile writes a minimal config file with a single "default"
 // profile carrying the given client_timeout (in seconds) and returns its path.
 func writeTimeoutConfigFile(t *testing.T, clientTimeout int) string {
@@ -426,6 +500,151 @@ func TestRequestToCurl(t *testing.T) {
 			}
 		}
 
+		for _, notWant := range tt.notWantInCurl {
+			if strings.Contains(curlStr, notWant) {
+				t.Errorf("%s: curl string contains unwanted %q\nGot: %s", tt.name, notWant, curlStr)
+			}
+		}
+		t.Logf("%s: curl command: %s", tt.name, curlStr)
+	}
+}
+
+// TestRequestToCurl_BodyRedaction is a regression test for secrets being
+// logged verbatim in the curl command RequestToCurl produces. Before the
+// fix, RequestToCurl appended the raw request body via `--data %q` with no
+// redaction at all, so any secret-bearing payload (e.g. a PFX enrollment
+// request carrying a private-key password) was written in plaintext to the
+// log whenever TRACE logging is enabled -- which is exactly what support
+// asks a customer to enable when reporting the slow-request/timeout issues
+// this library exists to fix, so plaintext secrets would routinely end up in
+// support bundles.
+//
+// The fix must redact known-sensitive field values from JSON and
+// form-encoded bodies while preserving the rest of the body for
+// diagnostics, and must never fall back to printing a body it can't safely
+// classify.
+func TestRequestToCurl_BodyRedaction(t *testing.T) {
+	tests := []struct {
+		name          string
+		contentType   string
+		body          string
+		wantInCurl    []string
+		notWantInCurl []string
+	}{
+		{
+			name:        "JSON top-level sensitive key",
+			contentType: "application/json",
+			body:        `{"Password":"SuperSecret1","CommonName":"test.example.com"}`,
+			wantInCurl: []string{
+				`\"CommonName\":\"test.example.com\"`,
+				`\"Password\":\"***REDACTED***\"`,
+			},
+			notWantInCurl: []string{
+				"SuperSecret1",
+			},
+		},
+		{
+			name:        "JSON nested sensitive key",
+			contentType: "application/json",
+			body:        `{"Subject":"CN=test","PFXPassword":{"Value":"NestedSecret!","SecretSource":"Inline"}}`,
+			wantInCurl: []string{
+				`\"Subject\":\"CN=test\"`,
+				`\"PFXPassword\":\"***REDACTED***\"`,
+			},
+			notWantInCurl: []string{
+				"NestedSecret!",
+				"SecretSource",
+			},
+		},
+		{
+			name:        "JSON sensitive key inside array element",
+			contentType: "application/json",
+			body:        `{"Stores":[{"StoreId":"abc","KeyPassword":"ArraySecret"}]}`,
+			wantInCurl: []string{
+				`\"StoreId\":\"abc\"`,
+				`\"KeyPassword\":\"***REDACTED***\"`,
+			},
+			notWantInCurl: []string{
+				"ArraySecret",
+			},
+		},
+		{
+			name:        "JSON case-insensitive key match",
+			contentType: "application/json",
+			body:        `{"clientSecret":"CaseSecret","Name":"svc"}`,
+			wantInCurl: []string{
+				`\"Name\":\"svc\"`,
+				`\"clientSecret\":\"***REDACTED***\"`,
+			},
+			notWantInCurl: []string{
+				"CaseSecret",
+			},
+		},
+		{
+			name:        "Form-encoded body with client_secret",
+			contentType: "application/x-www-form-urlencoded",
+			body:        "grant_type=client_credentials&client_id=my-client&client_secret=FormSecret",
+			wantInCurl: []string{
+				"grant_type=client_credentials",
+				"client_id=my-client",
+				"client_secret=%2A%2A%2AREDACTED%2A%2A%2A",
+			},
+			notWantInCurl: []string{
+				"FormSecret",
+			},
+		},
+		{
+			name:        "Opaque/unknown content type is omitted entirely",
+			contentType: "application/octet-stream",
+			body:        "raw-binary-looking-payload-with-a-Password=OpaqueSecret-inside",
+			wantInCurl: []string{
+				"redacted",
+				"application/octet-stream",
+			},
+			notWantInCurl: []string{
+				"OpaqueSecret",
+				"raw-binary-looking-payload",
+			},
+		},
+		{
+			name:        "Empty body",
+			contentType: "application/json",
+			body:        "",
+			wantInCurl: []string{
+				"curl", "-X", "POST",
+			},
+		},
+		{
+			name:        "JSON body with no sensitive keys stays fully visible",
+			contentType: "application/json",
+			body:        `{"CommonName":"test.example.com","Template":"WebServer"}`,
+			wantInCurl: []string{
+				`\"CommonName\":\"test.example.com\"`,
+				`\"Template\":\"WebServer\"`,
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		req, err := http.NewRequest("POST", "https://example.com/api", strings.NewReader(tt.body))
+		if err != nil {
+			t.Fatalf("%s: failed to create request: %v", tt.name, err)
+		}
+		if tt.contentType != "" {
+			req.Header.Set("Content-Type", tt.contentType)
+		}
+
+		curlStr, err := auth_providers.RequestToCurl(req)
+		if err != nil {
+			t.Errorf("%s: RequestToCurl returned error: %v", tt.name, err)
+			continue
+		}
+
+		for _, want := range tt.wantInCurl {
+			if !strings.Contains(curlStr, want) {
+				t.Errorf("%s: curl string missing %q\nGot: %s", tt.name, want, curlStr)
+			}
+		}
 		for _, notWant := range tt.notWantInCurl {
 			if strings.Contains(curlStr, notWant) {
 				t.Errorf("%s: curl string contains unwanted %q\nGot: %s", tt.name, notWant, curlStr)

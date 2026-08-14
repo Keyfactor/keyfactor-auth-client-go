@@ -24,6 +24,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -85,6 +86,27 @@ const (
 
 	// EnvKeyfactorClientTimeout is the environment variable for the timeout for the http Client
 	EnvKeyfactorClientTimeout = "KEYFACTOR_CLIENT_TIMEOUT"
+)
+
+// These transport-level timeouts govern connection pool/handshake behavior,
+// not the overall request deadline (that's HttpClientTimeout, which drives
+// ResponseHeaderTimeout). They are fixed, sane defaults -- matching
+// net/http.DefaultTransport -- and must never scale with HttpClientTimeout;
+// see newHTTPTransport's doc comment for the resource-leak history behind
+// this.
+const (
+	// DefaultIdleConnTimeout is how long an idle pooled connection is
+	// retained before being closed. Matches net/http.DefaultTransport.
+	DefaultIdleConnTimeout = 90 * time.Second
+
+	// DefaultExpectContinueTimeout is how long to wait for a "100 Continue"
+	// response before sending the request body. Matches
+	// net/http.DefaultTransport.
+	DefaultExpectContinueTimeout = 1 * time.Second
+
+	// DefaultTLSHandshakeTimeout is how long to wait for the TLS handshake
+	// to complete. Matches net/http.DefaultTransport.
+	DefaultTLSHandshakeTimeout = 10 * time.Second
 )
 
 // Authenticator is an interface for authentication to Keyfactor Command API.
@@ -326,22 +348,55 @@ func (c *CommandAuthConfig) ValidateAuthConfig() error {
 	return nil
 }
 
-// BuildTransport creates a custom http Transport for authentication to Keyfactor Command API.
-func (c *CommandAuthConfig) BuildTransport() (*http.Transport, error) {
-	defaultTimeout := time.Duration(c.HttpClientTimeout) * time.Second
-	output := http.Transport{
+// newHTTPTransport builds the *http.Transport shared by BuildTransport and
+// SetClient's zero-value client construction.
+//
+// Only ResponseHeaderTimeout is derived from CommandAuthConfig.HttpClientTimeout,
+// since it is the one true per-request deadline here -- it's what surfaces to
+// callers as "net/http: timeout awaiting response headers" and is the field a
+// large HttpClientTimeout (e.g. 1800s for slow PFX enrollments) is meant to
+// fix.
+//
+// IdleConnTimeout, ExpectContinueTimeout, and TLSHandshakeTimeout are pinned
+// to fixed, sane defaults instead of scaling with HttpClientTimeout:
+//
+//   - IdleConnTimeout governs how long an *idle* pooled connection is kept
+//     around, not a request deadline. Tying it to HttpClientTimeout meant a
+//     large configured timeout (needed for slow requests) also kept every
+//     idle socket -- and its goroutine -- alive for that same duration. A
+//     `terraform apply` issuing many sequential requests at a 1800s timeout
+//     therefore leaked hundreds of open sockets/goroutines for half an hour;
+//     at a 1s timeout everything was released almost immediately. We use
+//     net/http.DefaultTransport's default of 90s.
+//   - ExpectContinueTimeout is how long to wait for a "100 Continue" response
+//     before sending the request body; it's unrelated to the response
+//     deadline. We use net/http.DefaultTransport's default of 1s.
+//   - TLSHandshakeTimeout is a handshake deadline, not an idle-resource
+//     timeout, so it doesn't contribute to the leak above. It's pinned here
+//     anyway (rather than left scaling with HttpClientTimeout) on the same
+//     principle: a hung TLS handshake should fail fast and free the
+//     connection attempt independent of how long the caller is willing to
+//     wait for a slow response body. We use net/http.DefaultTransport's
+//     default of 10s.
+func (c *CommandAuthConfig) newHTTPTransport() *http.Transport {
+	return &http.Transport{
 		Proxy: http.ProxyFromEnvironment,
 		TLSClientConfig: &tls.Config{
 			Renegotiation: tls.RenegotiateOnceAsClient,
 		},
-		TLSHandshakeTimeout:   defaultTimeout,
-		ResponseHeaderTimeout: defaultTimeout,
-		IdleConnTimeout:       defaultTimeout,
-		ExpectContinueTimeout: defaultTimeout,
+		TLSHandshakeTimeout:   DefaultTLSHandshakeTimeout,
+		ResponseHeaderTimeout: time.Duration(c.HttpClientTimeout) * time.Second,
+		IdleConnTimeout:       DefaultIdleConnTimeout,
+		ExpectContinueTimeout: DefaultExpectContinueTimeout,
 		MaxIdleConns:          10,
 		MaxIdleConnsPerHost:   10,
 		MaxConnsPerHost:       10,
 	}
+}
+
+// BuildTransport creates a custom http Transport for authentication to Keyfactor Command API.
+func (c *CommandAuthConfig) BuildTransport() (*http.Transport, error) {
+	output := c.newHTTPTransport()
 
 	if c.SkipVerify {
 		output.TLSClientConfig.InsecureSkipVerify = true
@@ -351,7 +406,7 @@ func (c *CommandAuthConfig) BuildTransport() (*http.Transport, error) {
 		if _, err := os.Stat(c.CommandCACert); err == nil {
 			cert, ioErr := os.ReadFile(c.CommandCACert)
 			if ioErr != nil {
-				return &output, ioErr
+				return output, ioErr
 			}
 			// check if output.TLSClientConfig.RootCAs is nil
 			if output.TLSClientConfig.RootCAs == nil {
@@ -359,7 +414,7 @@ func (c *CommandAuthConfig) BuildTransport() (*http.Transport, error) {
 			}
 			// Append your custom cert to the pool
 			if ok := output.TLSClientConfig.RootCAs.AppendCertsFromPEM(cert); !ok {
-				return &output, fmt.Errorf("failed to append custom CA cert to pool")
+				return output, fmt.Errorf("failed to append custom CA cert to pool")
 			}
 		} else {
 			if output.TLSClientConfig.RootCAs == nil {
@@ -367,12 +422,12 @@ func (c *CommandAuthConfig) BuildTransport() (*http.Transport, error) {
 			}
 			// Append your custom cert to the pool
 			if ok := output.TLSClientConfig.RootCAs.AppendCertsFromPEM([]byte(c.CommandCACert)); !ok {
-				return &output, fmt.Errorf("failed to append custom CA cert to pool")
+				return output, fmt.Errorf("failed to append custom CA cert to pool")
 			}
 		}
 	}
 
-	return &output, nil
+	return output, nil
 }
 
 // SetClient sets the http Client for authentication to Keyfactor Command API.
@@ -385,27 +440,12 @@ func (c *CommandAuthConfig) SetClient(client *http.Client) *http.Client {
 		//defaultTransport := http.DefaultTransport.(*http.Transport).Clone()
 		////defaultTransport.TLSClientConfig = tlsConfig
 		//c.HttpClient = &http.Client{Transport: defaultTransport}
-		defaultTimeout := time.Duration(c.HttpClientTimeout) * time.Second
+		// Shares its transport construction (and, critically, the fixed
+		// IdleConnTimeout/ExpectContinueTimeout/TLSHandshakeTimeout defaults)
+		// with BuildTransport() via newHTTPTransport() -- see its doc comment
+		// for why those must not scale with HttpClientTimeout.
 		c.HttpClient = &http.Client{
-			Transport: &http.Transport{
-				Proxy: http.ProxyFromEnvironment,
-				TLSClientConfig: &tls.Config{
-					Renegotiation: tls.RenegotiateOnceAsClient,
-				},
-				TLSHandshakeTimeout:    defaultTimeout,
-				DisableKeepAlives:      false,
-				DisableCompression:     false,
-				MaxIdleConns:           10,
-				MaxIdleConnsPerHost:    10,
-				MaxConnsPerHost:        10,
-				IdleConnTimeout:        defaultTimeout,
-				ResponseHeaderTimeout:  defaultTimeout,
-				ExpectContinueTimeout:  defaultTimeout,
-				MaxResponseHeaderBytes: 0,
-				WriteBufferSize:        0,
-				ReadBufferSize:         0,
-				ForceAttemptHTTP2:      false,
-			},
+			Transport: c.newHTTPTransport(),
 		}
 	}
 
@@ -817,6 +857,134 @@ type contextKey string
 //		}
 //	}
 
+// redactedPlaceholder replaces the value of any sensitive field before a
+// request body is rendered into a shareable curl command or written to a
+// log. It is intentionally distinctive so it can never be mistaken for real
+// data.
+const redactedPlaceholder = "***REDACTED***"
+
+// sensitiveBodyKeys is the set of JSON/form field names -- matched
+// case-insensitively -- whose values must never be written to a log or a
+// generated curl command. This covers the Keyfactor Command API's
+// credential-bearing request fields (certificate enrollment/PFX passwords,
+// PAM secret values, etc.) as well as common OAuth2 token exchange fields.
+var sensitiveBodyKeys = map[string]struct{}{
+	"password":                {},
+	"pfxpassword":             {},
+	"keypassword":             {},
+	"entrypassword":           {},
+	"explicitpassword":        {},
+	"authcertificatepassword": {},
+	"passphrase":              {},
+	"privatekey":              {},
+	"secret":                  {},
+	"secretvalue":             {},
+	"clientsecret":            {},
+	"client_secret":           {},
+	"accesstoken":             {},
+	"access_token":            {},
+	"refreshtoken":            {},
+	"refresh_token":           {},
+	"apikey":                  {},
+	"api_key":                 {},
+}
+
+// isSensitiveBodyKey reports whether key names a field whose value should be
+// redacted before logging, matching case-insensitively.
+func isSensitiveBodyKey(key string) bool {
+	_, ok := sensitiveBodyKeys[strings.ToLower(key)]
+	return ok
+}
+
+// redactJSONValue walks a value decoded from JSON (map[string]interface{},
+// []interface{}, or a scalar) and returns a copy with the values of any
+// sensitive keys replaced by redactedPlaceholder. Structure (object/array
+// nesting) is preserved so the rest of the body remains useful for
+// diagnostics.
+func redactJSONValue(v interface{}) interface{} {
+	switch val := v.(type) {
+	case map[string]interface{}:
+		out := make(map[string]interface{}, len(val))
+		for k, vv := range val {
+			if isSensitiveBodyKey(k) {
+				out[k] = redactedPlaceholder
+				continue
+			}
+			out[k] = redactJSONValue(vv)
+		}
+		return out
+	case []interface{}:
+		out := make([]interface{}, len(val))
+		for i, vv := range val {
+			out[i] = redactJSONValue(vv)
+		}
+		return out
+	default:
+		return val
+	}
+}
+
+// opaqueBodyMarker renders the safe placeholder used whenever a request
+// body cannot be confidently classified (and therefore redacted) as JSON or
+// form-encoded. It deliberately omits the body content entirely rather than
+// guessing, since printing raw bytes here could leak a secret.
+func opaqueBodyMarker(contentType string, size int) string {
+	ct := contentType
+	if ct == "" {
+		ct = "unknown"
+	}
+	return fmt.Sprintf("<redacted: %d bytes, content-type %s>", size, ct)
+}
+
+// redactRequestBody renders a safe, loggable representation of an HTTP
+// request body for inclusion in a generated curl command. It never returns
+// the raw body verbatim unless every key it found was checked against
+// sensitiveBodyKeys and none matched. JSON bodies are parsed and
+// re-serialized with sensitive values replaced; form-encoded bodies (e.g.
+// OAuth2 client_credentials token requests carrying client_secret) have
+// sensitive form values replaced. Any body that can't be safely classified
+// -- including a body declared as JSON that fails to parse -- is omitted
+// entirely behind opaqueBodyMarker rather than risking a raw secret leak.
+func redactRequestBody(contentType string, body []byte) string {
+	if len(body) == 0 {
+		return ""
+	}
+
+	ct := strings.ToLower(contentType)
+
+	switch {
+	case strings.Contains(ct, "json"), ct == "" && json.Valid(body):
+		var parsed interface{}
+		if err := json.Unmarshal(body, &parsed); err != nil {
+			log.Printf("[ERROR] failed to parse request body declared as JSON for redaction: %v", err)
+			return opaqueBodyMarker(contentType, len(body))
+		}
+		redacted := redactJSONValue(parsed)
+		out, err := json.Marshal(redacted)
+		if err != nil {
+			log.Printf("[ERROR] failed to marshal redacted request body: %v", err)
+			return opaqueBodyMarker(contentType, len(body))
+		}
+		return string(out)
+	case strings.Contains(ct, "www-form-urlencoded"):
+		values, err := url.ParseQuery(string(body))
+		if err != nil {
+			log.Printf("[ERROR] failed to parse form-encoded request body for redaction: %v", err)
+			return opaqueBodyMarker(contentType, len(body))
+		}
+		for k := range values {
+			if isSensitiveBodyKey(k) {
+				values[k] = []string{redactedPlaceholder}
+			}
+		}
+		return values.Encode()
+	default:
+		// Unknown/opaque content type: never print raw bytes, since we can't
+		// confirm there's no secret buried in them.
+		return opaqueBodyMarker(contentType, len(body))
+	}
+}
+
 func RequestToCurl(req *http.Request) (string, error) {
 	var curlCommand strings.Builder
 
@@ -877,7 +1045,8 @@ func RequestToCurl(req *http.Request) (string, error) {
 			}
 			req.Body = io.NopCloser(bytes.NewBuffer(body)) // Restore the request body
 
-			curlCommand.WriteString(fmt.Sprintf("--data %q ", string(body)))
+			redactedBody := redactRequestBody(req.Header.Get("Content-Type"), body)
+			curlCommand.WriteString(fmt.Sprintf("--data %q ", redactedBody))
 		}
 	}
 
