@@ -172,6 +172,19 @@ type CommandAuthConfig struct {
 	// HttpClient is the http Client to be used for authentication to Keyfactor Command API
 	HttpClient *http.Client
 	//DefaultHttpClient *http.Client
+
+	// clientTimeoutDefaulted records whether HttpClientTimeout's current
+	// value was synthesized by ValidateAuthConfig's package-default fallback
+	// (DefaultClientTimeout) rather than explicitly configured by the caller
+	// (struct field, WithClientTimeout(), the KEYFACTOR_CLIENT_TIMEOUT env
+	// var, or an existing FileConfig value). GetServerConfig() consults this
+	// to avoid persisting a value the user never chose -- see
+	// TestCommandAuthConfig_PersistedDefaultConfigFile_DoesNotShadowEnvVar
+	// for why persisting the synthesized default is actively harmful: it
+	// gets written to disk, and on the next run is indistinguishable from a
+	// real file-configured value, which by design takes precedence over the
+	// env var and so permanently shadows it.
+	clientTimeoutDefaulted bool
 }
 
 // GetCommandVersion returns the Keyfactor Command product version detected during authentication.
@@ -269,6 +282,10 @@ func (c *CommandAuthConfig) WithConfigProfile(profile string) *CommandAuthConfig
 // WithClientTimeout sets the timeout for the http Client.
 func (c *CommandAuthConfig) WithClientTimeout(timeout int) *CommandAuthConfig {
 	c.HttpClientTimeout = timeout
+	// An explicit caller choice always overrides any earlier
+	// ValidateAuthConfig-synthesized default -- see clientTimeoutDefaulted's
+	// doc comment.
+	c.clientTimeoutDefaulted = false
 	return c
 }
 
@@ -330,6 +347,10 @@ func (c *CommandAuthConfig) ValidateAuthConfig() error {
 				c.HttpClientTimeout = c.FileConfig.ClientTimeout
 			} else {
 				c.HttpClientTimeout = DefaultClientTimeout
+				// This value was synthesized, not chosen -- see
+				// clientTimeoutDefaulted's doc comment. GetServerConfig()
+				// must not persist it.
+				c.clientTimeoutDefaulted = true
 			}
 		}
 	}
@@ -839,7 +860,16 @@ func (c *CommandAuthConfig) GetServerConfig() *Server {
 		SkipTLSVerify: c.SkipVerify,
 		CACertPath:    c.CommandCACert,
 		AuthType:      "",
-		ClientTimeout: c.HttpClientTimeout,
+	}
+	// Never persist a timeout the user never chose. If ValidateAuthConfig
+	// synthesized HttpClientTimeout from DefaultClientTimeout because nothing
+	// else was configured, leave Server.ClientTimeout at its zero value (and
+	// therefore omitted by its `omitempty` JSON/YAML tag) rather than writing
+	// out a value that would masquerade as an explicit file-configured
+	// setting -- and therefore permanently shadow KEYFACTOR_CLIENT_TIMEOUT --
+	// on the next load. See clientTimeoutDefaulted's doc comment.
+	if !c.clientTimeoutDefaulted {
+		server.ClientTimeout = c.HttpClientTimeout
 	}
 	return &server
 }
