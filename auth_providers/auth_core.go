@@ -284,11 +284,31 @@ func (c *CommandAuthConfig) ValidateAuthConfig() error {
 	if c.HttpClientTimeout <= 0 {
 		if timeout, ok := os.LookupEnv(EnvKeyfactorClientTimeout); ok {
 			configTimeout, tErr := strconv.Atoi(timeout)
-			if tErr == nil {
+			if tErr != nil {
+				log.Printf(
+					"[ERROR] invalid value %q for environment variable %s: %v; falling back to config file/default timeout",
+					timeout, EnvKeyfactorClientTimeout, tErr,
+				)
+			} else if configTimeout <= 0 {
+				log.Printf(
+					"[WARN] environment variable %s must be a positive integer, got %d; falling back to config file/default timeout",
+					EnvKeyfactorClientTimeout, configTimeout,
+				)
+			} else {
 				c.HttpClientTimeout = configTimeout
 			}
-		} else {
-			c.HttpClientTimeout = DefaultClientTimeout
+		}
+		// Fall back to the value loaded from the config file (if any), then the
+		// package default. This mirrors the CommandHostName fallback above and
+		// ensures an unset/unparseable env var can never leave HttpClientTimeout
+		// at its zero value, which would otherwise disable http.Client/Transport
+		// timeouts entirely (see issue tracking the unbounded-wait hazard).
+		if c.HttpClientTimeout <= 0 {
+			if c.FileConfig != nil && c.FileConfig.ClientTimeout > 0 {
+				c.HttpClientTimeout = c.FileConfig.ClientTimeout
+			} else {
+				c.HttpClientTimeout = DefaultClientTimeout
+			}
 		}
 	}
 
@@ -707,6 +727,9 @@ func (c *CommandAuthConfig) LoadConfig(profile string, configFilePath string, si
 	}
 	if !c.SkipVerify {
 		c.SkipVerify = server.SkipTLSVerify
+	}
+	if c.HttpClientTimeout <= 0 {
+		c.HttpClientTimeout = server.ClientTimeout
 	}
 
 	//if !silentLoad {
