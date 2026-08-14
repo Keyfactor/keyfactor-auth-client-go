@@ -967,6 +967,51 @@ func TestRequestToCurl_BodyRedaction_NestedJSONInString(t *testing.T) {
 	})
 }
 
+// TestRequestToCurl_BodyRedaction_NestedJSONInString_BOMPrefixed is a
+// regression test for a BOM byte defeating looksLikeJSONDocument's
+// nested-JSON-in-string heuristic. That heuristic inspected only the
+// first/last byte of a string value (after strings.TrimSpace) to decide
+// whether it looked like a JSON document worth re-parsing and redacting.
+// strings.TrimSpace uses unicode.IsSpace, which does not strip a U+FEFF
+// byte-order-mark, so a nested JSON-encoded string value prefixed with a BOM
+// -- plausible for a value that originated from a Windows-authored file,
+// e.g. a PAM/orchestrator service-account JSON key embedded in a Properties
+// map value -- was judged "not JSON" and redactNestedJSONString returned it
+// completely unredacted, defeating the whole point of the nested-JSON fix
+// for exactly the kind of payload it was built to catch.
+//
+// A nested JSON-in-string value prefixed with a BOM, containing a sensitive
+// key, must be redacted just like the non-BOM-prefixed case.
+func TestRequestToCurl_BodyRedaction_NestedJSONInString_BOMPrefixed(t *testing.T) {
+	innermost := "\uFEFF" + `{"Password":"DeepSecret"}`
+	wrapped, err := json.Marshal(map[string]string{"Properties": innermost})
+	if err != nil {
+		t.Fatalf("failed to build nested body: %v", err)
+	}
+
+	req, err := http.NewRequest("POST", "https://example.com/api", strings.NewReader(string(wrapped)))
+	if err != nil {
+		t.Fatalf("failed to create request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	curlStr, err := auth_providers.RequestToCurl(req)
+	if err != nil {
+		t.Fatalf("RequestToCurl returned error: %v", err)
+	}
+
+	if strings.Contains(curlStr, "DeepSecret") {
+		t.Fatalf("secret leaked through a BOM-prefixed nested JSON-in-string value\nGot: %s", curlStr)
+	}
+	if !strings.Contains(curlStr, "REDACTED") {
+		t.Fatalf("expected the nested Password field to be redacted, found no redaction marker\nGot: %s", curlStr)
+	}
+	if !strings.Contains(curlStr, "Password") {
+		t.Fatalf("expected the Password key name to remain visible for diagnostics\nGot: %s", curlStr)
+	}
+	t.Logf("curl command: %s", curlStr)
+}
+
 // TestCommandAuthConfig_MaxConnsPerHost_Unbounded is a regression test for a
 // global-concurrency-cap bug: newHTTPTransport() hardcoded
 // MaxConnsPerHost: 10. That was harmless as long as every request built its

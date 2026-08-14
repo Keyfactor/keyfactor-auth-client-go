@@ -1026,14 +1026,35 @@ func redactJSONValueAtDepth(v interface{}, nestedStringDepth int) interface{} {
 	}
 }
 
+// utf8BOM is the UTF-8 encoding of U+FEFF, the Unicode byte-order mark.
+// Files/values authored on Windows (e.g. a PAM/orchestrator service-account
+// JSON key embedded in a Properties map value) commonly carry a leading BOM.
+const utf8BOM = "\uFEFF"
+
+// stripLeadingBOM removes a leading UTF-8 byte-order-mark from s, if present.
+// strings.TrimSpace does not do this: unicode.IsSpace deliberately does not
+// treat U+FEFF as whitespace (it's a formatting character, not a space), so a
+// BOM-prefixed JSON document survives TrimSpace untouched. Both
+// looksLikeJSONDocument's outermost-byte check and redactNestedJSONString's
+// actual json.Unmarshal call need the BOM stripped first: encoding/json does
+// not tolerate a leading BOM either (json.Valid/json.Unmarshal reject it, not
+// silently skip it -- verified empirically), so stripping it explicitly is
+// required here, not merely one option among equally-robust choices.
+func stripLeadingBOM(s string) string {
+	return strings.TrimPrefix(s, utf8BOM)
+}
+
 // looksLikeJSONDocument reports whether s is plausibly a JSON object or
 // array, based solely on its outermost delimiters. It is intentionally cheap
 // and permissive (an unbalanced-but-bracketed string will still attempt to
 // parse and fail cleanly in redactNestedJSONString) so that every candidate
 // gets a real parse attempt rather than being skipped on a heuristic and
-// potentially leaking a secret verbatim.
+// potentially leaking a secret verbatim. A leading byte-order-mark is
+// stripped first -- see stripLeadingBOM -- so a BOM-prefixed JSON document is
+// still recognized as JSON rather than silently treated as an opaque string
+// and never inspected for nested secrets at all.
 func looksLikeJSONDocument(s string) bool {
-	t := strings.TrimSpace(s)
+	t := strings.TrimSpace(stripLeadingBOM(s))
 	if len(t) < 2 {
 		return false
 	}
@@ -1068,7 +1089,14 @@ func redactNestedJSONString(s string, nestedStringDepth int) interface{} {
 	}
 
 	var parsed interface{}
-	if err := json.Unmarshal([]byte(s), &parsed); err != nil {
+	// encoding/json rejects a leading BOM outright (json.Unmarshal returns an
+	// error rather than skipping it), so it must be stripped here too, not
+	// just in looksLikeJSONDocument's sniff above -- otherwise every
+	// BOM-prefixed value that reaches this point would always fail to parse
+	// and fall through to the whole-value redactedPlaceholder branch below,
+	// losing the surrounding key names' diagnostic value for no security
+	// benefit (the BOM carries no information worth preserving).
+	if err := json.Unmarshal([]byte(stripLeadingBOM(s)), &parsed); err != nil {
 		// Looks like JSON (balanced outer brackets) but doesn't actually
 		// parse -- could be a truncated or malformed secret-bearing
 		// fragment. Never emit it raw.
