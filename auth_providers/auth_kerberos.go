@@ -434,23 +434,22 @@ func (k *CommandAuthConfigKerberos) parseUsernameRealm() {
 
 // GetServerConfig returns the server configuration
 func (k *CommandAuthConfigKerberos) GetServerConfig() *Server {
-	server := Server{
-		Host:           k.CommandHostName,
-		Port:           k.CommandPort,
-		Username:       k.Username,
-		Password:       k.Password,
-		APIPath:        k.CommandAPIPath,
-		SkipTLSVerify:  k.SkipVerify,
-		CACertPath:     k.CommandCACert,
-		AuthType:       "kerberos",
-		KerberosRealm:  k.Realm,
-		KerberosKeytab: k.KeytabPath,
-		KerberosConfig: k.ConfigPath,
-		KerberosCCache: k.CCachePath,
-		KerberosSPN:    k.SPN,
-		ClientTimeout:  k.HttpClientTimeout,
-	}
-	return &server
+	// Delegate to the embedded CommandAuthConfig for the fields it already
+	// knows how to populate correctly -- notably ClientTimeout, which must be
+	// omitted (not the ValidateAuthConfig-synthesized default) unless the
+	// caller explicitly configured it. See clientTimeoutDefaulted's doc
+	// comment on CommandAuthConfig for why persisting a synthesized default
+	// is harmful. Layer Kerberos-specific fields on top.
+	server := k.CommandAuthConfig.GetServerConfig()
+	server.Username = k.Username
+	server.Password = k.Password
+	server.AuthType = "kerberos"
+	server.KerberosRealm = k.Realm
+	server.KerberosKeytab = k.KeytabPath
+	server.KerberosConfig = k.ConfigPath
+	server.KerberosCCache = k.CCachePath
+	server.KerberosSPN = k.SPN
+	return server
 }
 
 // fileExists checks if a file exists at the given path
