@@ -241,23 +241,18 @@ func (a *CommandAuthConfigBasic) parseUsernameDomain() error {
 
 // GetServerConfig returns the server configuration
 func (a *CommandAuthConfigBasic) GetServerConfig() *Server {
-	server := Server{
-		Host:          a.CommandHostName,
-		Port:          a.CommandPort,
-		Username:      a.Username,
-		Password:      a.Password,
-		Domain:        a.Domain,
-		ClientID:      "",
-		ClientSecret:  "",
-		OAuthTokenUrl: "",
-		APIPath:       a.CommandAPIPath,
-		//AuthProvider:  AuthProvider{},
-		SkipTLSVerify: a.SkipVerify,
-		CACertPath:    a.CommandCACert,
-		AuthType:      "basic",
-		ClientTimeout: a.HttpClientTimeout,
-	}
-	return &server
+	// Delegate to the embedded CommandAuthConfig for the fields it already
+	// knows how to populate correctly -- notably ClientTimeout, which must be
+	// omitted (not the ValidateAuthConfig-synthesized default) unless the
+	// caller explicitly configured it. See clientTimeoutDefaulted's doc
+	// comment on CommandAuthConfig for why persisting a synthesized default
+	// is harmful. Layer basic-auth-specific fields on top.
+	server := a.CommandAuthConfig.GetServerConfig()
+	server.Username = a.Username
+	server.Password = a.Password
+	server.Domain = a.Domain
+	server.AuthType = "basic"
+	return server
 }
 
 // Example usage of CommandAuthConfigBasic
