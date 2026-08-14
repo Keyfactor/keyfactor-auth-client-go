@@ -763,6 +763,7 @@ func (c *CommandAuthConfig) GetServerConfig() *Server {
 		SkipTLSVerify: c.SkipVerify,
 		CACertPath:    c.CommandCACert,
 		AuthType:      "",
+		ClientTimeout: c.HttpClientTimeout,
 	}
 	return &server
 }

@@ -448,6 +448,7 @@ func (k *CommandAuthConfigKerberos) GetServerConfig() *Server {
 		KerberosConfig: k.ConfigPath,
 		KerberosCCache: k.CCachePath,
 		KerberosSPN:    k.SPN,
+		ClientTimeout:  k.HttpClientTimeout,
 	}
 	return &server
 }

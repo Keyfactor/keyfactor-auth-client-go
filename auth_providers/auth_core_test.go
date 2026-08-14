@@ -18,6 +18,7 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Keyfactor/keyfactor-auth-client-go/auth_providers"
 )
@@ -60,6 +61,49 @@ func TestCommandAuthConfig_SetClient(t *testing.T) {
 
 	if config.HttpClient != client {
 		t.Fatalf("expected HttpClient to be set")
+	}
+}
+
+// TestCommandAuthConfig_ClientTimeout_ServerRoundTrip is a regression test for
+// https://github.com/Keyfactor/keyfactor-auth-client-go/issues/51: a
+// WithClientTimeout value set on CommandAuthConfig must survive the round trip
+// through GetServerConfig()'s *Server representation instead of being silently
+// dropped. Before the fix, Server had no ClientTimeout field at all, so this
+// assertion failed to compile/would read the Go zero value (0).
+func TestCommandAuthConfig_ClientTimeout_ServerRoundTrip(t *testing.T) {
+	config := &auth_providers.CommandAuthConfig{
+		CommandHostName: "test-host",
+		CommandPort:     443,
+		CommandAPIPath:  "KeyfactorAPI",
+	}
+	config.WithClientTimeout(300)
+
+	server := config.GetServerConfig()
+	if server.ClientTimeout != 300 {
+		t.Fatalf("expected Server.ClientTimeout to be 300, got %d", server.ClientTimeout)
+	}
+}
+
+// TestCommandAuthConfig_ClientTimeout_BuildTransport is a regression test proving
+// that a non-default client timeout actually reaches BuildTransport()'s derived
+// ResponseHeaderTimeout (the field responsible for the customer-observed
+// "net/http: timeout awaiting response headers" error at the default 60s).
+func TestCommandAuthConfig_ClientTimeout_BuildTransport(t *testing.T) {
+	config := &auth_providers.CommandAuthConfig{
+		CommandHostName: "test-host",
+		CommandPort:     443,
+		CommandAPIPath:  "KeyfactorAPI",
+	}
+	config.WithClientTimeout(300)
+
+	transport, err := config.BuildTransport()
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	expected := 300 * time.Second
+	if transport.ResponseHeaderTimeout != expected {
+		t.Fatalf("expected ResponseHeaderTimeout to be %v, got %v", expected, transport.ResponseHeaderTimeout)
 	}
 }
 

@@ -449,6 +449,7 @@ func (b *CommandConfigOauth) GetServerConfig() *Server {
 		SkipTLSVerify: b.SkipVerify,
 		CACertPath:    b.CommandCACert,
 		AuthType:      "oauth",
+		ClientTimeout: b.HttpClientTimeout,
 	}
 	return &server
 }
