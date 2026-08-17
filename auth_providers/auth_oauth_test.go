@@ -25,8 +25,10 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/Keyfactor/keyfactor-auth-client-go/auth_providers"
 )
@@ -739,4 +741,88 @@ func TestCommandConfigOauth_TokenSourceIsReused(t *testing.T) {
 	if tokenRequestCount.Load() != 1 {
 		t.Errorf("expected token endpoint to be called once, got %d — token source is not being reused across GetHttpClient() calls", tokenRequestCount.Load())
 	}
+}
+
+// TestCommandConfigOauth_GetHttpClient_TokenFetchBoundedByHttpClientTimeout is
+// a regression test for the unbounded initial OAuth client_credentials
+// token-fetch: GetHttpClient() built the ctx/http.Client pair injected into
+// the oauth2 token source with Timeout left at the zero value (meaning "no
+// timeout"). That client/ctx is captured once, lazily, inside the token
+// source and is never subject to anything set on the outer client
+// afterward (e.g. CommandAuthConfig.Authenticate's c.HttpClient.Timeout
+// assignment only bounds the *outer* request). A hung token endpoint
+// therefore blocked with no ceiling at all, regardless of HttpClientTimeout.
+//
+// This test isolates the token-fetch client's overall Timeout specifically
+// (as opposed to baseTransport's pre-existing ResponseHeaderTimeout, which
+// only bounds waiting for response *headers*, not a hang while streaming the
+// body): the fake token endpoint sends response headers immediately -- so
+// ResponseHeaderTimeout is satisfied -- and then hangs indefinitely without
+// finishing the body. Only an http.Client.Timeout catches that. A short
+// safety-net timer guarantees the test can't hang the suite even if this
+// regresses further.
+//
+// Note: the oauth2 library probes both AuthStyleInHeader and
+// AuthStyleInParams on the first-ever call to an unrecognized token
+// endpoint (see golang.org/x/oauth2/internal.RetrieveToken), so a hung
+// endpoint can cost up to ~2x HttpClientTimeout here, not 1x. The bound
+// below accounts for that.
+func TestCommandConfigOauth_GetHttpClient_TokenFetchBoundedByHttpClientTimeout(t *testing.T) {
+	releaseBody := make(chan struct{})
+	var releaseOnce sync.Once
+	release := func() { releaseOnce.Do(func() { close(releaseBody) }) }
+	// Absolute safety net: even if the fix regresses, the handler -- and
+	// therefore this test -- cannot hang past this bound.
+	safetyNet := time.AfterFunc(6*time.Second, release)
+	defer safetyNet.Stop()
+
+	tokenServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		if f, ok := w.(http.Flusher); ok {
+			f.Flush()
+		}
+		<-releaseBody
+	}))
+	// release() must run *before* tokenServer.Close(), which otherwise waits
+	// for the still-blocked handler goroutine -- deferring them separately
+	// (in either order) would make this test's own cleanup take as long as
+	// the safety net instead of finishing right after the assertions below.
+	defer func() {
+		release()
+		tokenServer.Close()
+	}()
+
+	config := &auth_providers.CommandConfigOauth{
+		CommandAuthConfig: auth_providers.CommandAuthConfig{
+			HttpClientTimeout: 1, // seconds -- deliberately short so the test runs fast
+		},
+		ClientID:     "test-client-id",
+		ClientSecret: "test-client-secret",
+		TokenURL:     tokenServer.URL,
+	}
+
+	client, err := config.GetHttpClient()
+	if err != nil {
+		t.Fatalf("GetHttpClient() returned error: %v", err)
+	}
+
+	start := time.Now()
+	resp, doErr := client.Get(tokenServer.URL) // triggers the token fetch before ever reaching the outer request
+	elapsed := time.Since(start)
+	if resp != nil {
+		resp.Body.Close()
+	}
+
+	if doErr == nil {
+		t.Fatalf("expected the token fetch to fail once the body-read hang exceeds HttpClientTimeout (1s), got success after %v", elapsed)
+	}
+	// Comfortably above the worst-case ~2x HttpClientTimeout (2s, from the
+	// auth-style probe retry described above), comfortably below the 6s
+	// safety net -- so this only passes if HttpClientTimeout is actually
+	// what bounded the call.
+	if elapsed > 4*time.Second {
+		t.Fatalf("expected the token fetch to be bounded by ~2x HttpClientTimeout (~2s), took %v (err: %v)", elapsed, doErr)
+	}
+	t.Logf("token fetch failed after %v as expected: %v", elapsed, doErr)
 }

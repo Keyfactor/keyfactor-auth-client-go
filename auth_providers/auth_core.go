@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -107,6 +108,19 @@ const (
 	// DefaultTLSHandshakeTimeout is how long to wait for the TLS handshake
 	// to complete. Matches net/http.DefaultTransport.
 	DefaultTLSHandshakeTimeout = 10 * time.Second
+
+	// DefaultDialTimeout bounds the TCP connect (dial) phase of a request.
+	// Matches net/http.DefaultTransport's own dialer timeout. Neither
+	// ResponseHeaderTimeout nor TLSHandshakeTimeout starts counting until
+	// *after* a TCP connection exists, so without an explicit dial timeout a
+	// black-holed destination (connection attempt met with silence, not even
+	// a RST/ICMP rejection) hangs with no ceiling at all -- independent of,
+	// and unbounded by, HttpClientTimeout. Pinned to a fixed default rather
+	// than scaled with HttpClientTimeout for the same reason as the other
+	// constants in this block: a large HttpClientTimeout configured for slow
+	// request bodies (e.g. 1800s for PFX enrollment) must not also permit a
+	// 1800s hang just to establish the TCP connection.
+	DefaultDialTimeout = 30 * time.Second
 )
 
 // Authenticator is an interface for authentication to Keyfactor Command API.
@@ -399,12 +413,22 @@ func (c *CommandAuthConfig) ValidateAuthConfig() error {
 //     connection attempt independent of how long the caller is willing to
 //     wait for a slow response body. We use net/http.DefaultTransport's
 //     default of 10s.
+//   - DialContext bounds the TCP connect phase itself, before
+//     TLSHandshakeTimeout or ResponseHeaderTimeout ever start counting. Left
+//     unset, the underlying http.Transport falls back to a zero-value
+//     net.Dialer with no timeout at all, so a black-holed destination (no
+//     RST/ICMP, just silence) hangs indefinitely -- unbounded by
+//     HttpClientTimeout, TLSHandshakeTimeout, or anything else in this
+//     chain. Pinned to DefaultDialTimeout (fixed, matching
+//     net/http.DefaultTransport) rather than scaled with HttpClientTimeout,
+//     for the same reason as the other fixed defaults above.
 func (c *CommandAuthConfig) newHTTPTransport() *http.Transport {
 	return &http.Transport{
 		Proxy: http.ProxyFromEnvironment,
 		TLSClientConfig: &tls.Config{
 			Renegotiation: tls.RenegotiateOnceAsClient,
 		},
+		DialContext:           (&net.Dialer{Timeout: DefaultDialTimeout}).DialContext,
 		TLSHandshakeTimeout:   DefaultTLSHandshakeTimeout,
 		ResponseHeaderTimeout: time.Duration(c.HttpClientTimeout) * time.Second,
 		IdleConnTimeout:       DefaultIdleConnTimeout,

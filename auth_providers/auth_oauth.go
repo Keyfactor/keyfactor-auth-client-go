@@ -226,7 +226,27 @@ func (b *CommandConfigOauth) GetHttpClient() (*http.Client, error) {
 		b.Scopes = DefaultScopes
 	}
 
-	ctx := context.WithValue(context.Background(), oauth2.HTTPClient, &http.Client{Transport: baseTransport})
+	// The initial client_credentials token fetch performed lazily inside the
+	// token source below is NOT bounded by baseTransport's
+	// ResponseHeaderTimeout/TLSHandshakeTimeout in any useful way here: the
+	// oauth2 library captures this ctx/http.Client pair once and reuses it
+	// for every future token refresh, permanently divorced from anything set
+	// on the outer client later (e.g. CommandAuthConfig.Authenticate's
+	// c.HttpClient.Timeout assignment only bounds the *outer* request, never
+	// this token source's independently-cached context). Without an explicit
+	// Timeout here, a hung token endpoint (most notably a black-holed TCP
+	// dial with no RST/ICMP) blocks with no ceiling at all, regardless of
+	// HttpClientTimeout. Guard against HttpClientTimeout somehow still being
+	// <= 0 at this call site (it shouldn't be -- ValidateAuthConfig above
+	// already guarantees a positive value -- but Timeout: 0 means "no
+	// timeout" for http.Client, so an unguarded fallthrough here would
+	// silently reintroduce the same unbounded-wait hazard in a new place).
+	tokenFetchTimeoutSeconds := b.HttpClientTimeout
+	if tokenFetchTimeoutSeconds <= 0 {
+		tokenFetchTimeoutSeconds = DefaultClientTimeout
+	}
+	ctx := context.WithValue(context.Background(), oauth2.HTTPClient,
+		&http.Client{Transport: baseTransport, Timeout: time.Duration(tokenFetchTimeoutSeconds) * time.Second})
 
 	// Lazily initialize the token source and cache it
 	b.tsMu.Lock()

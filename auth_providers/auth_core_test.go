@@ -1066,3 +1066,61 @@ func TestCommandAuthConfig_MaxConnsPerHost_Unbounded(t *testing.T) {
 		}
 	})
 }
+
+// TestCommandAuthConfig_DialTimeout_BuildTransport is a regression test for the
+// unbounded-TCP-dial hazard: newHTTPTransport() previously left DialContext
+// unset, so the underlying http.Transport fell back to a zero-value
+// net.Dialer with no timeout at all. Neither TLSHandshakeTimeout nor
+// ResponseHeaderTimeout starts counting until *after* a TCP connection
+// exists, so a black-holed destination (connection attempt met with silence,
+// not even a RST/ICMP rejection) hung with no ceiling whatsoever --
+// independent of, and unbounded by, HttpClientTimeout.
+//
+// DialContext must now be set to a fixed, sane default (DefaultDialTimeout,
+// matching net/http.DefaultTransport's own convention), and -- like
+// IdleConnTimeout/ExpectContinueTimeout/TLSHandshakeTimeout above -- it must
+// stay pinned regardless of how large HttpClientTimeout is configured (e.g.
+// 1800s for slow PFX enrollments); otherwise a large HttpClientTimeout would
+// also permit a 1800s hang just to establish the TCP connection.
+func TestCommandAuthConfig_DialTimeout_BuildTransport(t *testing.T) {
+	if auth_providers.DefaultDialTimeout != 30*time.Second {
+		t.Fatalf("expected DefaultDialTimeout to be 30s (matching net/http.DefaultTransport), got %v", auth_providers.DefaultDialTimeout)
+	}
+
+	t.Run("default HttpClientTimeout", func(t *testing.T) {
+		config := &auth_providers.CommandAuthConfig{
+			CommandHostName: "test-host",
+			CommandPort:     443,
+			CommandAPIPath:  "KeyfactorAPI",
+		}
+		transport, err := config.BuildTransport()
+		if err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+		if transport.DialContext == nil {
+			t.Fatal("expected DialContext to be set so the TCP dial phase is bounded, got nil (unbounded dial)")
+		}
+	})
+
+	t.Run("large HttpClientTimeout does not scale the dial timeout", func(t *testing.T) {
+		config := &auth_providers.CommandAuthConfig{
+			CommandHostName:   "test-host",
+			CommandPort:       443,
+			CommandAPIPath:    "KeyfactorAPI",
+			HttpClientTimeout: 1800,
+		}
+		transport, err := config.BuildTransport()
+		if err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+		if transport.DialContext == nil {
+			t.Fatal("expected DialContext to be set even with a large HttpClientTimeout, got nil (unbounded dial)")
+		}
+		// ResponseHeaderTimeout is meant to scale with HttpClientTimeout --
+		// confirm this test's config actually exercises the "large timeout"
+		// case, so a future refactor can't silently make this a no-op.
+		if expected := 1800 * time.Second; transport.ResponseHeaderTimeout != expected {
+			t.Fatalf("expected ResponseHeaderTimeout to be %v, got %v", expected, transport.ResponseHeaderTimeout)
+		}
+	})
+}
