@@ -795,6 +795,7 @@ func TestCommandConfigOauth_GetHttpClient_TokenFetchBoundedByHttpClientTimeout(t
 
 	config := &auth_providers.CommandConfigOauth{
 		CommandAuthConfig: auth_providers.CommandAuthConfig{
+			CommandHostName:   "test-host",
 			HttpClientTimeout: 1, // seconds -- deliberately short so the test runs fast
 		},
 		ClientID:     "test-client-id",
@@ -825,4 +826,75 @@ func TestCommandConfigOauth_GetHttpClient_TokenFetchBoundedByHttpClientTimeout(t
 		t.Fatalf("expected the token fetch to be bounded by ~2x HttpClientTimeout (~2s), took %v (err: %v)", elapsed, doErr)
 	}
 	t.Logf("token fetch failed after %v as expected: %v", elapsed, doErr)
+}
+
+// TestCommandConfigOauth_GetAccessToken_TokenFetchBoundedByHttpClientTimeout
+// is the GetAccessToken() analogue of
+// TestCommandConfigOauth_GetHttpClient_TokenFetchBoundedByHttpClientTimeout
+// above. GetAccessToken() is a separate, independently-reachable entry point
+// that built its own context.Background() for config.TokenSource() /
+// tokenSource.Token() with no oauth2.HTTPClient value attached -- so it fell
+// back to http.DefaultClient (Timeout: 0), the exact same unbounded-hang
+// hazard GetHttpClient() had, just reachable through this sibling method
+// instead. A hung token endpoint (one that accepts the connection, sends
+// headers, and then never finishes the body) must not block this call
+// forever.
+//
+// Same technique as the GetHttpClient() test: the fake token endpoint sends
+// response headers immediately (so any ResponseHeaderTimeout on the
+// transport alone is satisfied) and then hangs indefinitely on the body.
+// Only an http.Client.Timeout derived from HttpClientTimeout catches that. A
+// short safety-net timer guarantees the test can't hang the suite even if
+// this regresses further.
+func TestCommandConfigOauth_GetAccessToken_TokenFetchBoundedByHttpClientTimeout(t *testing.T) {
+	releaseBody := make(chan struct{})
+	var releaseOnce sync.Once
+	release := func() { releaseOnce.Do(func() { close(releaseBody) }) }
+	// Absolute safety net: even if the fix regresses, the handler -- and
+	// therefore this test -- cannot hang past this bound.
+	safetyNet := time.AfterFunc(6*time.Second, release)
+	defer safetyNet.Stop()
+
+	tokenServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		if f, ok := w.(http.Flusher); ok {
+			f.Flush()
+		}
+		<-releaseBody
+	}))
+	// release() must run *before* tokenServer.Close(), which otherwise waits
+	// for the still-blocked handler goroutine -- deferring them separately
+	// (in either order) would make this test's own cleanup take as long as
+	// the safety net instead of finishing right after the assertions below.
+	defer func() {
+		release()
+		tokenServer.Close()
+	}()
+
+	config := &auth_providers.CommandConfigOauth{
+		CommandAuthConfig: auth_providers.CommandAuthConfig{
+			CommandHostName:   "test-host",
+			HttpClientTimeout: 1, // seconds -- deliberately short so the test runs fast
+		},
+		ClientID:     "test-client-id",
+		ClientSecret: "test-client-secret",
+		TokenURL:     tokenServer.URL,
+	}
+
+	start := time.Now()
+	token, err := config.GetAccessToken()
+	elapsed := time.Since(start)
+
+	if err == nil {
+		t.Fatalf("expected GetAccessToken() to fail once the body-read hang exceeds HttpClientTimeout (1s), got token %+v after %v", token, elapsed)
+	}
+	// Comfortably above the worst-case ~2x HttpClientTimeout (2s, matching the
+	// auth-style probe retry noted in the GetHttpClient() test above),
+	// comfortably below the 6s safety net -- so this only passes if
+	// HttpClientTimeout is actually what bounded the call.
+	if elapsed > 4*time.Second {
+		t.Fatalf("expected GetAccessToken() to be bounded by ~2x HttpClientTimeout (~2s), took %v (err: %v)", elapsed, err)
+	}
+	t.Logf("GetAccessToken() failed after %v as expected: %v", elapsed, err)
 }

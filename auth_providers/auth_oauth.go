@@ -77,6 +77,34 @@ type oauth2Transport struct {
 	src  oauth2.TokenSource
 }
 
+// oauthTokenFetchContext returns a context carrying an oauth2.HTTPClient
+// value pointing at an *http.Client that wraps baseTransport with a bounded
+// Timeout derived from httpClientTimeout. Every call site that hands a
+// context to the golang.org/x/oauth2 machinery for a token fetch (whether via
+// clientcredentials.Config.TokenSource, which caches this ctx/http.Client
+// pair for every future refresh, or a direct one-shot
+// tokenSource.Token() call) MUST use this helper instead of
+// context.Background(): golang.org/x/oauth2/internal.ContextClient falls
+// back to http.DefaultClient (Timeout: 0, unbounded) whenever the context
+// carries no oauth2.HTTPClient value, and net/http.DefaultTransport sets no
+// ResponseHeaderTimeout -- so a TCP connection that succeeds and then a
+// hung/overloaded token endpoint simply never responds hangs the caller
+// forever, regardless of HttpClientTimeout.
+//
+// Guards against httpClientTimeout <= 0 (ValidateAuthConfig should already
+// guarantee a positive value by the time callers reach this point, but
+// http.Client.Timeout: 0 means "no timeout," so an unguarded fallthrough here
+// would silently reintroduce the exact same unbounded-wait hazard in a new
+// place).
+func oauthTokenFetchContext(baseTransport http.RoundTripper, httpClientTimeout int) context.Context {
+	tokenFetchTimeoutSeconds := httpClientTimeout
+	if tokenFetchTimeoutSeconds <= 0 {
+		tokenFetchTimeoutSeconds = DefaultClientTimeout
+	}
+	return context.WithValue(context.Background(), oauth2.HTTPClient,
+		&http.Client{Transport: baseTransport, Timeout: time.Duration(tokenFetchTimeoutSeconds) * time.Second})
+}
+
 // GetHttpClient returns the http client
 func (a *OAuthAuthenticator) GetHttpClient() (*http.Client, error) {
 	return a.Client, nil
@@ -233,20 +261,10 @@ func (b *CommandConfigOauth) GetHttpClient() (*http.Client, error) {
 	// for every future token refresh, permanently divorced from anything set
 	// on the outer client later (e.g. CommandAuthConfig.Authenticate's
 	// c.HttpClient.Timeout assignment only bounds the *outer* request, never
-	// this token source's independently-cached context). Without an explicit
-	// Timeout here, a hung token endpoint (most notably a black-holed TCP
-	// dial with no RST/ICMP) blocks with no ceiling at all, regardless of
-	// HttpClientTimeout. Guard against HttpClientTimeout somehow still being
-	// <= 0 at this call site (it shouldn't be -- ValidateAuthConfig above
-	// already guarantees a positive value -- but Timeout: 0 means "no
-	// timeout" for http.Client, so an unguarded fallthrough here would
-	// silently reintroduce the same unbounded-wait hazard in a new place).
-	tokenFetchTimeoutSeconds := b.HttpClientTimeout
-	if tokenFetchTimeoutSeconds <= 0 {
-		tokenFetchTimeoutSeconds = DefaultClientTimeout
-	}
-	ctx := context.WithValue(context.Background(), oauth2.HTTPClient,
-		&http.Client{Transport: baseTransport, Timeout: time.Duration(tokenFetchTimeoutSeconds) * time.Second})
+	// this token source's independently-cached context). See
+	// oauthTokenFetchContext's doc comment for why an explicit Timeout is
+	// required here.
+	ctx := oauthTokenFetchContext(baseTransport, b.HttpClientTimeout)
 
 	// Lazily initialize the token source and cache it
 	b.tsMu.Lock()
@@ -509,7 +527,15 @@ func (b *CommandConfigOauth) GetAccessToken() (*oauth2.Token, error) {
 		}
 	}
 
-	ctx := context.Background()
+	// See oauthTokenFetchContext's doc comment: without this, config.TokenSource
+	// below (and the eventual tokenSource.Token() call) falls back to
+	// http.DefaultClient, which has no Timeout, so a TCP-connected-but-silent
+	// token endpoint would hang this call forever.
+	baseTransport, tErr := b.BuildTransport()
+	if tErr != nil {
+		return nil, tErr
+	}
+	ctx := oauthTokenFetchContext(baseTransport, b.HttpClientTimeout)
 	log.Printf("[DEBUG] Returning call config.TokenSource() for client ID: %s", b.ClientID)
 	tokenSource := config.TokenSource(ctx)
 	if tokenSource == nil {
