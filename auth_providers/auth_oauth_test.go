@@ -764,9 +764,13 @@ func TestCommandConfigOauth_TokenSourceIsReused(t *testing.T) {
 //
 // Note: the oauth2 library probes both AuthStyleInHeader and
 // AuthStyleInParams on the first-ever call to an unrecognized token
-// endpoint (see golang.org/x/oauth2/internal.RetrieveToken), so a hung
-// endpoint can cost up to ~2x HttpClientTimeout here, not 1x. The bound
-// below accounts for that.
+// endpoint (see golang.org/x/oauth2/internal.RetrieveToken). oauthTokenFetchContext
+// now shares a single aggregate deadline across both attempts (see its doc
+// comment and TestCommandConfigOauth_GetHttpClient_TokenFetchNotDoubledByAuthStyleProbe),
+// so a hung endpoint is bounded by ~1x HttpClientTimeout in practice, not
+// 2x -- the bound below is intentionally left loose (up to ~2x) since this
+// test's purpose is confirming *some* real bound exists at all; the
+// tighter ~1x guarantee has its own dedicated regression test.
 func TestCommandConfigOauth_GetHttpClient_TokenFetchBoundedByHttpClientTimeout(t *testing.T) {
 	releaseBody := make(chan struct{})
 	var releaseOnce sync.Once
@@ -889,12 +893,182 @@ func TestCommandConfigOauth_GetAccessToken_TokenFetchBoundedByHttpClientTimeout(
 	if err == nil {
 		t.Fatalf("expected GetAccessToken() to fail once the body-read hang exceeds HttpClientTimeout (1s), got token %+v after %v", token, elapsed)
 	}
-	// Comfortably above the worst-case ~2x HttpClientTimeout (2s, matching the
-	// auth-style probe retry noted in the GetHttpClient() test above),
-	// comfortably below the 6s safety net -- so this only passes if
-	// HttpClientTimeout is actually what bounded the call.
+	// Comfortably above the worst-case bound (now ~1x HttpClientTimeout in
+	// practice -- see TestCommandConfigOauth_GetAccessToken_TokenFetchNotDoubledByAuthStyleProbe
+	// for the tight guarantee -- but left loose here at up to ~2x since this
+	// test's purpose is confirming *some* real bound exists at all),
+	// comfortably below the 6s safety net.
 	if elapsed > 4*time.Second {
 		t.Fatalf("expected GetAccessToken() to be bounded by ~2x HttpClientTimeout (~2s), took %v (err: %v)", elapsed, err)
 	}
 	t.Logf("GetAccessToken() failed after %v as expected: %v", elapsed, err)
+}
+
+// TestCommandConfigOauth_GetHttpClient_TokenFetchNotDoubledByAuthStyleProbe
+// is a regression test for a subtler variant of the unbounded-token-fetch
+// hazard than the TokenFetchBoundedByHttpClientTimeout tests above catch.
+//
+// golang.org/x/oauth2/internal.RetrieveToken silently performs up to TWO
+// sequential HTTP round trips for a single logical client_credentials token
+// fetch whenever the AuthStyle for a given tokenURL/clientID pair hasn't
+// been learned yet (see clientcredentials.Config.AuthStyle /
+// AuthStyleUnknown): it tries AuthStyleInHeader first and, on ANY failure
+// (including a timeout), immediately retries with AuthStyleInParams using
+// the same context. Every call in this package builds a brand new
+// clientcredentials.Config per logical fetch, so this always applies.
+//
+// oauthTokenFetchContext previously bounded the fetch only via an
+// http.Client.Timeout field, which http.Client.Do() re-derives fresh
+// (time.Now().Add(Timeout)) on every call -- so each of the two sequential
+// attempts silently got its own full HttpClientTimeout budget, doubling the
+// real-world worst-case cost of a hard failure (e.g. an unroutable token
+// endpoint) to ~2x HttpClientTimeout. This went undetected because the two
+// TokenFetchBoundedByHttpClientTimeout tests above intentionally tolerate up
+// to ~2x as "not a regression" (see their comments) -- they were written to
+// confirm SOME bound exists, not that the bound is tight, so they cannot
+// distinguish "capped at 1x" from "capped at 2x."
+//
+// This test asserts the tight bound directly, using the request counter as
+// the primary, deterministic signal: with the fix, the context passed to
+// both AuthStyle attempts shares a single absolute deadline, so by the time
+// the first attempt's hang exhausts that budget and RetrieveToken tries the
+// second AuthStyle, the shared context is already past its deadline and the
+// second attempt fails before ever reaching the network -- the token
+// endpoint sees exactly one request, not two. Before the fix this test
+// reliably measures exactly two requests and ~2x HttpClientTimeout elapsed
+// (verified against the pre-fix commit).
+func TestCommandConfigOauth_GetHttpClient_TokenFetchNotDoubledByAuthStyleProbe(t *testing.T) {
+	var attemptCount atomic.Int32
+	releaseBody := make(chan struct{})
+	var releaseOnce sync.Once
+	release := func() { releaseOnce.Do(func() { close(releaseBody) }) }
+	// Absolute safety net: even if the fix regresses further than the old
+	// ~2x behavior, the handler -- and therefore this test -- cannot hang
+	// indefinitely.
+	safetyNet := time.AfterFunc(10*time.Second, release)
+	defer safetyNet.Stop()
+
+	tokenServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attemptCount.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		if f, ok := w.(http.Flusher); ok {
+			f.Flush()
+		}
+		<-releaseBody
+	}))
+	defer func() {
+		release()
+		tokenServer.Close()
+	}()
+
+	const httpClientTimeoutSeconds = 2
+	config := &auth_providers.CommandConfigOauth{
+		CommandAuthConfig: auth_providers.CommandAuthConfig{
+			CommandHostName:   "test-host",
+			HttpClientTimeout: httpClientTimeoutSeconds,
+		},
+		ClientID:     "test-client-id",
+		ClientSecret: "test-client-secret",
+		TokenURL:     tokenServer.URL,
+	}
+
+	client, err := config.GetHttpClient()
+	if err != nil {
+		t.Fatalf("GetHttpClient() returned error: %v", err)
+	}
+
+	start := time.Now()
+	resp, doErr := client.Get(tokenServer.URL)
+	elapsed := time.Since(start)
+	if resp != nil {
+		resp.Body.Close()
+	}
+
+	if doErr == nil {
+		t.Fatalf("expected the token fetch to fail once the body-read hang exceeds HttpClientTimeout (%ds), got success after %v", httpClientTimeoutSeconds, elapsed)
+	}
+
+	if got := attemptCount.Load(); got != 1 {
+		t.Fatalf(
+			"expected exactly 1 request to the token endpoint (the second AuthStyle-probe attempt should fail against the already-exhausted shared deadline before ever reaching the network), got %d requests after %v -- this indicates the 2x-doubling bug has regressed",
+			got, elapsed,
+		)
+	}
+
+	// Secondary, looser confirmation: bounded by 1.5x rather than exactly 1x
+	// to tolerate real scheduling/IO overhead, while still failing hard if
+	// the aggregate reverts to ~2x HttpClientTimeout.
+	if maxAllowed := time.Duration(float64(httpClientTimeoutSeconds)*1.5) * time.Second; elapsed > maxAllowed {
+		t.Fatalf(
+			"expected the token fetch to be bounded by ~1x HttpClientTimeout (%ds), got %v",
+			httpClientTimeoutSeconds, elapsed,
+		)
+	}
+	t.Logf("token fetch failed after %v with exactly 1 request to the token endpoint, as expected", elapsed)
+}
+
+// TestCommandConfigOauth_GetAccessToken_TokenFetchNotDoubledByAuthStyleProbe
+// is the GetAccessToken() analogue of
+// TestCommandConfigOauth_GetHttpClient_TokenFetchNotDoubledByAuthStyleProbe
+// above -- see its doc comment for the full mechanism. GetAccessToken()
+// takes a separate code path (a fresh, uncached context/config built on
+// every call, rather than GetHttpClient()'s cached token source) but was
+// subject to the exact same ~2x-HttpClientTimeout doubling hazard before the
+// fix, since it shares oauthTokenFetchContext.
+func TestCommandConfigOauth_GetAccessToken_TokenFetchNotDoubledByAuthStyleProbe(t *testing.T) {
+	var attemptCount atomic.Int32
+	releaseBody := make(chan struct{})
+	var releaseOnce sync.Once
+	release := func() { releaseOnce.Do(func() { close(releaseBody) }) }
+	safetyNet := time.AfterFunc(10*time.Second, release)
+	defer safetyNet.Stop()
+
+	tokenServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attemptCount.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		if f, ok := w.(http.Flusher); ok {
+			f.Flush()
+		}
+		<-releaseBody
+	}))
+	defer func() {
+		release()
+		tokenServer.Close()
+	}()
+
+	const httpClientTimeoutSeconds = 2
+	config := &auth_providers.CommandConfigOauth{
+		CommandAuthConfig: auth_providers.CommandAuthConfig{
+			CommandHostName:   "test-host",
+			HttpClientTimeout: httpClientTimeoutSeconds,
+		},
+		ClientID:     "test-client-id",
+		ClientSecret: "test-client-secret",
+		TokenURL:     tokenServer.URL,
+	}
+
+	start := time.Now()
+	token, err := config.GetAccessToken()
+	elapsed := time.Since(start)
+
+	if err == nil {
+		t.Fatalf("expected GetAccessToken() to fail once the body-read hang exceeds HttpClientTimeout (%ds), got token %+v after %v", httpClientTimeoutSeconds, token, elapsed)
+	}
+
+	if got := attemptCount.Load(); got != 1 {
+		t.Fatalf(
+			"expected exactly 1 request to the token endpoint (the second AuthStyle-probe attempt should fail against the already-exhausted shared deadline before ever reaching the network), got %d requests after %v -- this indicates the 2x-doubling bug has regressed",
+			got, elapsed,
+		)
+	}
+
+	if maxAllowed := time.Duration(float64(httpClientTimeoutSeconds)*1.5) * time.Second; elapsed > maxAllowed {
+		t.Fatalf(
+			"expected GetAccessToken() to be bounded by ~1x HttpClientTimeout (%ds), got %v (err: %v)",
+			httpClientTimeoutSeconds, elapsed, err,
+		)
+	}
+	t.Logf("GetAccessToken() failed after %v with exactly 1 request to the token endpoint, as expected", elapsed)
 }

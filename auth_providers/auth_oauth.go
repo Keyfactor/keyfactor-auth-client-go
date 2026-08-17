@@ -79,11 +79,10 @@ type oauth2Transport struct {
 
 // oauthTokenFetchContext returns a context carrying an oauth2.HTTPClient
 // value pointing at an *http.Client that wraps baseTransport with a bounded
-// Timeout derived from httpClientTimeout. Every call site that hands a
-// context to the golang.org/x/oauth2 machinery for a token fetch (whether via
-// clientcredentials.Config.TokenSource, which caches this ctx/http.Client
-// pair for every future refresh, or a direct one-shot
-// tokenSource.Token() call) MUST use this helper instead of
+// Timeout derived from httpClientTimeout, AND an overall deadline on the
+// returned context itself (via context.WithTimeout) bounding the same
+// duration. Every call site that hands a context to the golang.org/x/oauth2
+// machinery for a token fetch MUST use this helper instead of
 // context.Background(): golang.org/x/oauth2/internal.ContextClient falls
 // back to http.DefaultClient (Timeout: 0, unbounded) whenever the context
 // carries no oauth2.HTTPClient value, and net/http.DefaultTransport sets no
@@ -91,18 +90,89 @@ type oauth2Transport struct {
 // hung/overloaded token endpoint simply never responds hangs the caller
 // forever, regardless of HttpClientTimeout.
 //
+// The context-level deadline (not just the http.Client.Timeout field) is
+// required because golang.org/x/oauth2/internal.RetrieveToken silently
+// performs up to TWO sequential HTTP round trips for a single logical token
+// fetch: on the first-ever call to a given tokenURL/clientID pair it doesn't
+// yet know whether the server wants client credentials sent as
+// AuthStyleInHeader or AuthStyleInParams, so it tries the first style and,
+// if that attempt fails for ANY reason (including a timeout), immediately
+// retries with the other style using the exact same ctx. http.Client.Do()
+// re-derives its deadline as time.Now().Add(c.Timeout) fresh on every call,
+// so relying on the *http.Client.Timeout field alone gives each of those two
+// sequential attempts its own full httpClientTimeout budget -- silently
+// doubling the observed worst-case wall-clock cost of a hard failure (a
+// black-holed/unroutable token endpoint) to ~2x httpClientTimeout, per
+// attempt further capped at DefaultDialTimeout during the dial phase
+// specifically. (An httpClientTimeout of 15s measured as *exactly* 30s in
+// the wild against such an endpoint -- 2x15 -- which happens to equal
+// DefaultDialTimeout and is easy to misdiagnose as a dial-timeout bug; it
+// is not, the 30s was coincidental.) A context-level deadline fixes this
+// because it is an absolute point in time set once, shared by both
+// sequential attempts: the first attempt consumes some (or all) of the
+// budget, and http.Client.Do()'s own per-call deadline computation always
+// defers to an earlier deadline already present on the request's context
+// (see net/http's setRequestCancel/timeBeforeContextDeadline), so the
+// second attempt is bounded by whatever budget is actually left -- zero, if
+// the first attempt already exhausted it -- rather than getting a fresh
+// full window.
+//
+// This context must NOT be cached and reused across multiple logical token
+// fetches spread out over time (e.g. an oauth2 token source that refreshes
+// hours after it was constructed): its deadline is relative to the moment
+// this function is called, so a stale cached instance would eventually
+// make every future refresh fail instantly with "context deadline
+// exceeded" regardless of network conditions. Every call site must invoke
+// this function fresh for each logical fetch and must call the returned
+// CancelFunc once that fetch completes to release the timer promptly (see
+// boundedClientCredentialsTokenSource for how GetHttpClient()'s
+// long-lived, cached token source still gets a fresh context per actual
+// refresh).
+//
 // Guards against httpClientTimeout <= 0 (ValidateAuthConfig should already
 // guarantee a positive value by the time callers reach this point, but
 // http.Client.Timeout: 0 means "no timeout," so an unguarded fallthrough here
 // would silently reintroduce the exact same unbounded-wait hazard in a new
 // place).
-func oauthTokenFetchContext(baseTransport http.RoundTripper, httpClientTimeout int) context.Context {
+func oauthTokenFetchContext(baseTransport http.RoundTripper, httpClientTimeout int) (context.Context, context.CancelFunc) {
 	tokenFetchTimeoutSeconds := httpClientTimeout
 	if tokenFetchTimeoutSeconds <= 0 {
 		tokenFetchTimeoutSeconds = DefaultClientTimeout
 	}
-	return context.WithValue(context.Background(), oauth2.HTTPClient,
-		&http.Client{Transport: baseTransport, Timeout: time.Duration(tokenFetchTimeoutSeconds) * time.Second})
+	timeout := time.Duration(tokenFetchTimeoutSeconds) * time.Second
+
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	ctx = context.WithValue(ctx, oauth2.HTTPClient, &http.Client{Transport: baseTransport, Timeout: timeout})
+	return ctx, cancel
+}
+
+// boundedClientCredentialsTokenSource wraps a *clientcredentials.Config so
+// that EVERY actual token fetch -- not just the first -- gets a freshly
+// bounded context/http.Client pair from oauthTokenFetchContext, rather than
+// the single ctx/http.Client that clientcredentials.Config.TokenSource would
+// otherwise capture once (at GetHttpClient() call time) and reuse forever.
+//
+// This matters for two independent reasons:
+//  1. oauthTokenFetchContext's returned context now carries an absolute
+//     deadline (see its doc comment) that must not be reused past the
+//     logical fetch it was created for, or every future token refresh would
+//     fail instantly once that original deadline has passed.
+//  2. Building the context fresh on every actual refresh, rather than once
+//     up front, is also simply correct: it is oauth2.ReuseTokenSource (see
+//     GetHttpClient) that decides when a real network fetch is even
+//     necessary, by checking the cached token's validity first. This type
+//     is only ever asked for a new Token() when a real fetch is required.
+type boundedClientCredentialsTokenSource struct {
+	config            *clientcredentials.Config
+	baseTransport     http.RoundTripper
+	httpClientTimeout int
+}
+
+// Token performs a single, freshly-bounded client_credentials token fetch.
+func (s *boundedClientCredentialsTokenSource) Token() (*oauth2.Token, error) {
+	ctx, cancel := oauthTokenFetchContext(s.baseTransport, s.httpClientTimeout)
+	defer cancel()
+	return s.config.Token(ctx)
 }
 
 // GetHttpClient returns the http client
@@ -254,23 +324,27 @@ func (b *CommandConfigOauth) GetHttpClient() (*http.Client, error) {
 		b.Scopes = DefaultScopes
 	}
 
-	// The initial client_credentials token fetch performed lazily inside the
-	// token source below is NOT bounded by baseTransport's
-	// ResponseHeaderTimeout/TLSHandshakeTimeout in any useful way here: the
-	// oauth2 library captures this ctx/http.Client pair once and reuses it
-	// for every future token refresh, permanently divorced from anything set
-	// on the outer client later (e.g. CommandAuthConfig.Authenticate's
-	// c.HttpClient.Timeout assignment only bounds the *outer* request, never
-	// this token source's independently-cached context). See
-	// oauthTokenFetchContext's doc comment for why an explicit Timeout is
-	// required here.
-	ctx := oauthTokenFetchContext(baseTransport, b.HttpClientTimeout)
-
-	// Lazily initialize the token source and cache it
+	// The client_credentials token fetch is NOT bounded by baseTransport's
+	// ResponseHeaderTimeout/TLSHandshakeTimeout in any useful way here, and
+	// must not rely on a single ctx/http.Client captured once and reused for
+	// every future token refresh: see boundedClientCredentialsTokenSource's
+	// and oauthTokenFetchContext's doc comments for why a fresh bounded
+	// context is built for every actual refresh instead, and why that
+	// context must carry its own deadline rather than relying solely on the
+	// wrapped http.Client's Timeout field.
+	//
+	// Lazily initialize the token source and cache it. oauth2.ReuseTokenSource
+	// caches the resulting token and only calls back into
+	// boundedClientCredentialsTokenSource.Token() when a real network fetch
+	// is actually required (initial fetch, or refresh after expiry).
 	b.tsMu.Lock()
 	if b.tokenSource == nil {
 		log.Printf("[DEBUG] Initializing OAuth2 token source for client ID: %s", b.ClientID)
-		b.tokenSource = config.TokenSource(ctx)
+		b.tokenSource = oauth2.ReuseTokenSource(nil, &boundedClientCredentialsTokenSource{
+			config:            config,
+			baseTransport:     baseTransport,
+			httpClientTimeout: b.HttpClientTimeout,
+		})
 	}
 	tokenSource := b.tokenSource
 	b.tsMu.Unlock()
@@ -527,21 +601,20 @@ func (b *CommandConfigOauth) GetAccessToken() (*oauth2.Token, error) {
 		}
 	}
 
-	// See oauthTokenFetchContext's doc comment: without this, config.TokenSource
-	// below (and the eventual tokenSource.Token() call) falls back to
-	// http.DefaultClient, which has no Timeout, so a TCP-connected-but-silent
-	// token endpoint would hang this call forever.
+	// See oauthTokenFetchContext's doc comment: without this, config.Token
+	// below falls back to http.DefaultClient, which has no Timeout, so a
+	// TCP-connected-but-silent token endpoint would hang this call forever.
+	// This is a single one-shot fetch (no caching/reuse across calls like
+	// GetHttpClient()'s token source), so the bounded context's lifetime is
+	// scoped to just this call via defer cancel().
 	baseTransport, tErr := b.BuildTransport()
 	if tErr != nil {
 		return nil, tErr
 	}
-	ctx := oauthTokenFetchContext(baseTransport, b.HttpClientTimeout)
-	log.Printf("[DEBUG] Returning call config.TokenSource() for client ID: %s", b.ClientID)
-	tokenSource := config.TokenSource(ctx)
-	if tokenSource == nil {
-		return nil, fmt.Errorf("failed to create token source for client ID: %s", b.ClientID)
-	}
-	token, tErr := tokenSource.Token()
+	ctx, cancel := oauthTokenFetchContext(baseTransport, b.HttpClientTimeout)
+	defer cancel()
+	log.Printf("[DEBUG] Fetching OAuth2 token for client ID: %s", b.ClientID)
+	token, tErr := config.Token(ctx)
 	if tErr != nil {
 		return nil, fmt.Errorf("failed to retrieve token for client ID %s: %w", b.ClientID, tErr)
 	}
