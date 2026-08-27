@@ -332,6 +332,77 @@ func TestReadBasicAuthConfigExample(t *testing.T) {
 	}
 }
 
+// TestServer_ClientTimeout_BasicAuthRoundTrip is a regression test for
+// https://github.com/Keyfactor/keyfactor-auth-client-go/issues/51: a
+// Server.ClientTimeout value must be honored when the Server is converted back
+// into a basic-auth CommandAuthConfigBasic, not silently dropped.
+func TestServer_ClientTimeout_BasicAuthRoundTrip(t *testing.T) {
+	server := &auth_providers.Server{
+		Host:          "test-host",
+		Username:      "user",
+		Password:      "pass",
+		ClientTimeout: 300,
+	}
+
+	config, err := server.GetBasicAuthClientConfig()
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	if config.HttpClientTimeout != 300 {
+		t.Fatalf("expected HttpClientTimeout to be 300, got %d", config.HttpClientTimeout)
+	}
+}
+
+// TestServer_ClientTimeout_OAuthRoundTrip mirrors the basic-auth regression test
+// above for the OAuth client config path.
+func TestServer_ClientTimeout_OAuthRoundTrip(t *testing.T) {
+	server := &auth_providers.Server{
+		Host:          "test-host",
+		ClientID:      "client-id",
+		ClientSecret:  "client-secret",
+		OAuthTokenUrl: "https://idp.example.com/oauth2/token",
+		ClientTimeout: 300,
+	}
+
+	config, err := server.GetOAuthClientConfig()
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	if config.HttpClientTimeout != 300 {
+		t.Fatalf("expected HttpClientTimeout to be 300, got %d", config.HttpClientTimeout)
+	}
+}
+
+// TestServer_ClientTimeout_KerberosRoundTrip mirrors the basic-auth regression
+// test above for the Kerberos client config path.
+func TestServer_ClientTimeout_KerberosRoundTrip(t *testing.T) {
+	krb5Conf := "test_krb5.conf"
+	if err := os.WriteFile(krb5Conf, []byte("[libdefaults]\n"), 0644); err != nil {
+		t.Fatalf("failed to write temp krb5.conf: %v", err)
+	}
+	defer os.Remove(krb5Conf)
+
+	server := &auth_providers.Server{
+		Host:           "test-host",
+		Username:       "user",
+		Password:       "pass",
+		KerberosRealm:  "EXAMPLE.COM",
+		KerberosConfig: krb5Conf,
+		ClientTimeout:  300,
+	}
+
+	config, err := server.GetKerberosClientConfig()
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	if config.HttpClientTimeout != 300 {
+		t.Fatalf("expected HttpClientTimeout to be 300, got %d", config.HttpClientTimeout)
+	}
+}
+
 func compareConfigs(a, b *auth_providers.Config) bool {
 	if len(a.Servers) != len(b.Servers) {
 		return false

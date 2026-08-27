@@ -40,6 +40,7 @@ type Server struct {
 	SkipTLSVerify bool         `json:"skip_tls_verify,omitempty" yaml:"skip_tls_verify,omitempty"` // TLSVerify determines whether to verify the TLS certificate.
 	CACertPath    string       `json:"ca_cert_path,omitempty" yaml:"ca_cert_path,omitempty"`       // CACertPath is the path to the CA certificate to trust.
 	AuthType      string       `json:"auth_type,omitempty" yaml:"auth_type,omitempty"`             // AuthType is the type of authentication to use.
+	ClientTimeout int          `json:"client_timeout,omitempty" yaml:"client_timeout,omitempty"`   // ClientTimeout is the http Client timeout, in seconds, mirrored from CommandAuthConfig.HttpClientTimeout.
 
 	// Kerberos authentication fields
 	KerberosRealm  string `json:"kerberos_realm,omitempty" yaml:"kerberos_realm,omitempty"`   // KerberosRealm is the Kerberos realm (uppercase).
@@ -226,7 +227,8 @@ func (s *Server) Compare(other *Server) bool {
 		s.KerberosKeytab == other.KerberosKeytab &&
 		s.KerberosConfig == other.KerberosConfig &&
 		s.KerberosCCache == other.KerberosCCache &&
-		s.KerberosSPN == other.KerberosSPN
+		s.KerberosSPN == other.KerberosSPN &&
+		s.ClientTimeout == other.ClientTimeout
 }
 
 // MergeConfigFromFile merges the configuration from a file into the existing Config.
@@ -287,7 +289,8 @@ func (s *Server) GetBasicAuthClientConfig() (*CommandAuthConfigBasic, error) {
 		WithCommandPort(s.Port).
 		WithCommandAPIPath(s.APIPath).
 		WithCommandCACert(s.CACertPath).
-		WithSkipVerify(s.SkipTLSVerify)
+		WithSkipVerify(s.SkipTLSVerify).
+		WithClientTimeout(s.ClientTimeout)
 
 	basicConfig := CommandAuthConfigBasic{
 		CommandAuthConfig: baseConfig,
@@ -317,7 +320,8 @@ func (s *Server) GetOAuthClientConfig() (*CommandConfigOauth, error) {
 		WithCommandPort(s.Port).
 		WithCommandAPIPath(s.APIPath).
 		WithCommandCACert(s.CACertPath).
-		WithSkipVerify(s.SkipTLSVerify)
+		WithSkipVerify(s.SkipTLSVerify).
+		WithClientTimeout(s.ClientTimeout)
 
 	oauthConfig := CommandConfigOauth{
 		CommandAuthConfig: baseConfig,
@@ -350,7 +354,8 @@ func (s *Server) GetKerberosClientConfig() (*CommandAuthConfigKerberos, error) {
 		WithCommandPort(s.Port).
 		WithCommandAPIPath(s.APIPath).
 		WithCommandCACert(s.CACertPath).
-		WithSkipVerify(s.SkipTLSVerify)
+		WithSkipVerify(s.SkipTLSVerify).
+		WithClientTimeout(s.ClientTimeout)
 
 	kerberosConfig := CommandAuthConfigKerberos{
 		CommandAuthConfig: baseConfig,
