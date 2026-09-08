@@ -15,6 +15,7 @@
 package auth_providers_test
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
@@ -270,6 +271,129 @@ func unsetBasicEnvVariables() {
 	os.Unsetenv(auth_providers.EnvKeyfactorUsername)
 	os.Unsetenv(auth_providers.EnvKeyfactorPassword)
 	os.Unsetenv(auth_providers.EnvKeyfactorDomain)
+}
+
+// TestCommandAuthConfigBasic_GetServerConfig_DoesNotPersistSynthesizedDefault
+// is the CommandAuthConfigBasic analogue of
+// TestCommandAuthConfig_GetServerConfig_DoesNotPersistSynthesizedDefault in
+// auth_core_test.go. CommandAuthConfigBasic defines its own GetServerConfig()
+// that shadows the embedded CommandAuthConfig's method via Go's method
+// resolution, so a fix landed only on the base type does not protect this --
+// or any other real caller-facing -- concrete type. CommandAuthConfigBasic is
+// what every real basic-auth caller (kfutil, keyfactor-go-client, etc.)
+// actually constructs.
+//
+// A value that was never explicitly configured (no struct field, no
+// WithClientTimeout(), no env var, no file value) must not be serialized.
+func TestCommandAuthConfigBasic_GetServerConfig_DoesNotPersistSynthesizedDefault(t *testing.T) {
+	t.Setenv(auth_providers.EnvKeyfactorUsername, "test-user")
+	t.Setenv(auth_providers.EnvKeyfactorPassword, "test-pass")
+	t.Setenv(auth_providers.EnvKeyfactorDomain, "test-domain")
+
+	config := &auth_providers.CommandAuthConfigBasic{
+		CommandAuthConfig: auth_providers.CommandAuthConfig{
+			CommandHostName: "test-host",
+			CommandPort:     443,
+			CommandAPIPath:  "KeyfactorAPI",
+		},
+	}
+
+	if err := config.ValidateAuthConfig(); err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	server := config.GetServerConfig()
+	if server.ClientTimeout != 0 {
+		t.Fatalf("expected Server.ClientTimeout to be omitted (0) for a synthesized default, got %d", server.ClientTimeout)
+	}
+}
+
+// TestCommandAuthConfigBasic_GetServerConfig_PersistsExplicitTimeout proves
+// the companion positive case: an explicitly configured timeout must still be
+// serialized by CommandAuthConfigBasic.GetServerConfig().
+func TestCommandAuthConfigBasic_GetServerConfig_PersistsExplicitTimeout(t *testing.T) {
+	t.Setenv(auth_providers.EnvKeyfactorUsername, "test-user")
+	t.Setenv(auth_providers.EnvKeyfactorPassword, "test-pass")
+	t.Setenv(auth_providers.EnvKeyfactorDomain, "test-domain")
+
+	config := &auth_providers.CommandAuthConfigBasic{
+		CommandAuthConfig: auth_providers.CommandAuthConfig{
+			CommandHostName: "test-host",
+			CommandPort:     443,
+			CommandAPIPath:  "KeyfactorAPI",
+		},
+	}
+	config.WithClientTimeout(300)
+
+	if err := config.ValidateAuthConfig(); err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	server := config.GetServerConfig()
+	if server.ClientTimeout != 300 {
+		t.Fatalf("expected Server.ClientTimeout to be 300, got %d", server.ClientTimeout)
+	}
+}
+
+// TestCommandAuthConfigBasic_PersistedDefaultConfigFile_DoesNotShadowEnvVar is
+// the CommandAuthConfigBasic analogue of
+// TestCommandAuthConfig_PersistedDefaultConfigFile_DoesNotShadowEnvVar: a
+// synthesized default persisted to a config file by a first run must not
+// shadow KEYFACTOR_CLIENT_TIMEOUT on a second run that loads that file.
+func TestCommandAuthConfigBasic_PersistedDefaultConfigFile_DoesNotShadowEnvVar(t *testing.T) {
+	t.Setenv(auth_providers.EnvKeyfactorUsername, "test-user")
+	t.Setenv(auth_providers.EnvKeyfactorPassword, "test-pass")
+	t.Setenv(auth_providers.EnvKeyfactorDomain, "test-domain")
+
+	// Run 1: nothing explicitly configured for client timeout.
+	run1 := &auth_providers.CommandAuthConfigBasic{
+		CommandAuthConfig: auth_providers.CommandAuthConfig{
+			CommandHostName: "test-host",
+			CommandPort:     443,
+			CommandAPIPath:  "KeyfactorAPI",
+		},
+	}
+	if err := run1.ValidateAuthConfig(); err != nil {
+		t.Fatalf("run1: expected no error, got %v", err)
+	}
+
+	persisted := run1.GetServerConfig()
+
+	// Persist exactly what kfutil's login flow persists: the resolved Server
+	// config, verbatim, to the "default" profile of a config file.
+	dir := t.TempDir()
+	path := dir + "/command_config.json"
+	fileContents, mErr := json.Marshal(
+		map[string]interface{}{
+			"servers": map[string]interface{}{
+				"default": persisted,
+			},
+		},
+	)
+	if mErr != nil {
+		t.Fatalf("failed to marshal persisted config: %v", mErr)
+	}
+	if err := os.WriteFile(path, fileContents, 0o600); err != nil {
+		t.Fatalf("failed to write persisted config file: %v", err)
+	}
+
+	// Run 2: a fresh process loads that persisted file and has
+	// KEYFACTOR_CLIENT_TIMEOUT set in its environment.
+	t.Setenv(auth_providers.EnvKeyfactorClientTimeout, "1800")
+
+	run2 := &auth_providers.CommandAuthConfigBasic{}
+	run2.WithConfigFile(path).WithConfigProfile("default")
+
+	if err := run2.ValidateAuthConfig(); err != nil {
+		t.Fatalf("run2: expected no error from ValidateAuthConfig, got %v", err)
+	}
+
+	if run2.HttpClientTimeout != 1800 {
+		t.Fatalf(
+			"expected KEYFACTOR_CLIENT_TIMEOUT=1800 to be honored, but a persisted synthesized default shadowed it: got HttpClientTimeout=%d",
+			run2.HttpClientTimeout,
+		)
+	}
 }
 
 func authBasicTest(
