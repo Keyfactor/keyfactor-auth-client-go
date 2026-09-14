@@ -23,7 +23,9 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -85,6 +87,40 @@ const (
 
 	// EnvKeyfactorClientTimeout is the environment variable for the timeout for the http Client
 	EnvKeyfactorClientTimeout = "KEYFACTOR_CLIENT_TIMEOUT"
+)
+
+// These transport-level timeouts govern connection pool/handshake behavior,
+// not the overall request deadline (that's HttpClientTimeout, which drives
+// ResponseHeaderTimeout). They are fixed, sane defaults -- matching
+// net/http.DefaultTransport -- and must never scale with HttpClientTimeout;
+// see newHTTPTransport's doc comment for the resource-leak history behind
+// this.
+const (
+	// DefaultIdleConnTimeout is how long an idle pooled connection is
+	// retained before being closed. Matches net/http.DefaultTransport.
+	DefaultIdleConnTimeout = 90 * time.Second
+
+	// DefaultExpectContinueTimeout is how long to wait for a "100 Continue"
+	// response before sending the request body. Matches
+	// net/http.DefaultTransport.
+	DefaultExpectContinueTimeout = 1 * time.Second
+
+	// DefaultTLSHandshakeTimeout is how long to wait for the TLS handshake
+	// to complete. Matches net/http.DefaultTransport.
+	DefaultTLSHandshakeTimeout = 10 * time.Second
+
+	// DefaultDialTimeout bounds the TCP connect (dial) phase of a request.
+	// Matches net/http.DefaultTransport's own dialer timeout. Neither
+	// ResponseHeaderTimeout nor TLSHandshakeTimeout starts counting until
+	// *after* a TCP connection exists, so without an explicit dial timeout a
+	// black-holed destination (connection attempt met with silence, not even
+	// a RST/ICMP rejection) hangs with no ceiling at all -- independent of,
+	// and unbounded by, HttpClientTimeout. Pinned to a fixed default rather
+	// than scaled with HttpClientTimeout for the same reason as the other
+	// constants in this block: a large HttpClientTimeout configured for slow
+	// request bodies (e.g. 1800s for PFX enrollment) must not also permit a
+	// 1800s hang just to establish the TCP connection.
+	DefaultDialTimeout = 30 * time.Second
 )
 
 // Authenticator is an interface for authentication to Keyfactor Command API.
@@ -150,6 +186,19 @@ type CommandAuthConfig struct {
 	// HttpClient is the http Client to be used for authentication to Keyfactor Command API
 	HttpClient *http.Client
 	//DefaultHttpClient *http.Client
+
+	// clientTimeoutDefaulted records whether HttpClientTimeout's current
+	// value was synthesized by ValidateAuthConfig's package-default fallback
+	// (DefaultClientTimeout) rather than explicitly configured by the caller
+	// (struct field, WithClientTimeout(), the KEYFACTOR_CLIENT_TIMEOUT env
+	// var, or an existing FileConfig value). GetServerConfig() consults this
+	// to avoid persisting a value the user never chose -- see
+	// TestCommandAuthConfig_PersistedDefaultConfigFile_DoesNotShadowEnvVar
+	// for why persisting the synthesized default is actively harmful: it
+	// gets written to disk, and on the next run is indistinguishable from a
+	// real file-configured value, which by design takes precedence over the
+	// env var and so permanently shadows it.
+	clientTimeoutDefaulted bool
 }
 
 // GetCommandVersion returns the Keyfactor Command product version detected during authentication.
@@ -247,6 +296,10 @@ func (c *CommandAuthConfig) WithConfigProfile(profile string) *CommandAuthConfig
 // WithClientTimeout sets the timeout for the http Client.
 func (c *CommandAuthConfig) WithClientTimeout(timeout int) *CommandAuthConfig {
 	c.HttpClientTimeout = timeout
+	// An explicit caller choice always overrides any earlier
+	// ValidateAuthConfig-synthesized default -- see clientTimeoutDefaulted's
+	// doc comment.
+	c.clientTimeoutDefaulted = false
 	return c
 }
 
@@ -284,11 +337,35 @@ func (c *CommandAuthConfig) ValidateAuthConfig() error {
 	if c.HttpClientTimeout <= 0 {
 		if timeout, ok := os.LookupEnv(EnvKeyfactorClientTimeout); ok {
 			configTimeout, tErr := strconv.Atoi(timeout)
-			if tErr == nil {
+			if tErr != nil {
+				log.Printf(
+					"[ERROR] invalid value %q for environment variable %s: %v; falling back to config file/default timeout",
+					timeout, EnvKeyfactorClientTimeout, tErr,
+				)
+			} else if configTimeout <= 0 {
+				log.Printf(
+					"[WARN] environment variable %s must be a positive integer, got %d; falling back to config file/default timeout",
+					EnvKeyfactorClientTimeout, configTimeout,
+				)
+			} else {
 				c.HttpClientTimeout = configTimeout
 			}
-		} else {
-			c.HttpClientTimeout = DefaultClientTimeout
+		}
+		// Fall back to the value loaded from the config file (if any), then the
+		// package default. This mirrors the CommandHostName fallback above and
+		// ensures an unset/unparseable env var can never leave HttpClientTimeout
+		// at its zero value, which would otherwise disable http.Client/Transport
+		// timeouts entirely (see issue tracking the unbounded-wait hazard).
+		if c.HttpClientTimeout <= 0 {
+			if c.FileConfig != nil && c.FileConfig.ClientTimeout > 0 {
+				c.HttpClientTimeout = c.FileConfig.ClientTimeout
+			} else {
+				c.HttpClientTimeout = DefaultClientTimeout
+				// This value was synthesized, not chosen -- see
+				// clientTimeoutDefaulted's doc comment. GetServerConfig()
+				// must not persist it.
+				c.clientTimeoutDefaulted = true
+			}
 		}
 	}
 
@@ -306,22 +383,78 @@ func (c *CommandAuthConfig) ValidateAuthConfig() error {
 	return nil
 }
 
-// BuildTransport creates a custom http Transport for authentication to Keyfactor Command API.
-func (c *CommandAuthConfig) BuildTransport() (*http.Transport, error) {
-	defaultTimeout := time.Duration(c.HttpClientTimeout) * time.Second
-	output := http.Transport{
+// newHTTPTransport builds the *http.Transport shared by BuildTransport and
+// SetClient's zero-value client construction.
+//
+// Only ResponseHeaderTimeout is derived from CommandAuthConfig.HttpClientTimeout,
+// since it is the one true per-request deadline here -- it's what surfaces to
+// callers as "net/http: timeout awaiting response headers" and is the field a
+// large HttpClientTimeout (e.g. 1800s for slow PFX enrollments) is meant to
+// fix.
+//
+// IdleConnTimeout, ExpectContinueTimeout, and TLSHandshakeTimeout are pinned
+// to fixed, sane defaults instead of scaling with HttpClientTimeout:
+//
+//   - IdleConnTimeout governs how long an *idle* pooled connection is kept
+//     around, not a request deadline. Tying it to HttpClientTimeout meant a
+//     large configured timeout (needed for slow requests) also kept every
+//     idle socket -- and its goroutine -- alive for that same duration. A
+//     `terraform apply` issuing many sequential requests at a 1800s timeout
+//     therefore leaked hundreds of open sockets/goroutines for half an hour;
+//     at a 1s timeout everything was released almost immediately. We use
+//     net/http.DefaultTransport's default of 90s.
+//   - ExpectContinueTimeout is how long to wait for a "100 Continue" response
+//     before sending the request body; it's unrelated to the response
+//     deadline. We use net/http.DefaultTransport's default of 1s.
+//   - TLSHandshakeTimeout is a handshake deadline, not an idle-resource
+//     timeout, so it doesn't contribute to the leak above. It's pinned here
+//     anyway (rather than left scaling with HttpClientTimeout) on the same
+//     principle: a hung TLS handshake should fail fast and free the
+//     connection attempt independent of how long the caller is willing to
+//     wait for a slow response body. We use net/http.DefaultTransport's
+//     default of 10s.
+//   - DialContext bounds the TCP connect phase itself, before
+//     TLSHandshakeTimeout or ResponseHeaderTimeout ever start counting. Left
+//     unset, the underlying http.Transport falls back to a zero-value
+//     net.Dialer with no timeout at all, so a black-holed destination (no
+//     RST/ICMP, just silence) hangs indefinitely -- unbounded by
+//     HttpClientTimeout, TLSHandshakeTimeout, or anything else in this
+//     chain. Pinned to DefaultDialTimeout (fixed, matching
+//     net/http.DefaultTransport) rather than scaled with HttpClientTimeout,
+//     for the same reason as the other fixed defaults above.
+func (c *CommandAuthConfig) newHTTPTransport() *http.Transport {
+	return &http.Transport{
 		Proxy: http.ProxyFromEnvironment,
 		TLSClientConfig: &tls.Config{
 			Renegotiation: tls.RenegotiateOnceAsClient,
 		},
-		TLSHandshakeTimeout:   defaultTimeout,
-		ResponseHeaderTimeout: defaultTimeout,
-		IdleConnTimeout:       defaultTimeout,
-		ExpectContinueTimeout: defaultTimeout,
+		DialContext:           (&net.Dialer{Timeout: DefaultDialTimeout}).DialContext,
+		TLSHandshakeTimeout:   DefaultTLSHandshakeTimeout,
+		ResponseHeaderTimeout: time.Duration(c.HttpClientTimeout) * time.Second,
+		IdleConnTimeout:       DefaultIdleConnTimeout,
+		ExpectContinueTimeout: DefaultExpectContinueTimeout,
 		MaxIdleConns:          10,
 		MaxIdleConnsPerHost:   10,
-		MaxConnsPerHost:       10,
+		// MaxConnsPerHost is intentionally left at 0 (unbounded, matching
+		// net/http.DefaultTransport). This transport is now cached and reused
+		// as a single long-lived *http.Client/*http.Transport by callers (to
+		// fix a socket-leak bug where a fresh transport was built per
+		// request), so a nonzero MaxConnsPerHost here would become a hard,
+		// unqueued-timeout ceiling on concurrent in-flight requests per host
+		// for the lifetime of the process -- e.g. `terraform apply
+		// -parallelism=25` would silently serialize into batches of N with no
+		// bound on how long excess requests wait, since neither this client's
+		// Timeout nor its requests' contexts impose one. MaxIdleConns/
+		// MaxIdleConnsPerHost above still bound long-term idle-socket
+		// retention, which is the resource concern MaxConnsPerHost was
+		// presumably added for.
+		MaxConnsPerHost: 0,
 	}
+}
+
+// BuildTransport creates a custom http Transport for authentication to Keyfactor Command API.
+func (c *CommandAuthConfig) BuildTransport() (*http.Transport, error) {
+	output := c.newHTTPTransport()
 
 	if c.SkipVerify {
 		output.TLSClientConfig.InsecureSkipVerify = true
@@ -331,7 +464,7 @@ func (c *CommandAuthConfig) BuildTransport() (*http.Transport, error) {
 		if _, err := os.Stat(c.CommandCACert); err == nil {
 			cert, ioErr := os.ReadFile(c.CommandCACert)
 			if ioErr != nil {
-				return &output, ioErr
+				return output, ioErr
 			}
 			// check if output.TLSClientConfig.RootCAs is nil
 			if output.TLSClientConfig.RootCAs == nil {
@@ -339,7 +472,7 @@ func (c *CommandAuthConfig) BuildTransport() (*http.Transport, error) {
 			}
 			// Append your custom cert to the pool
 			if ok := output.TLSClientConfig.RootCAs.AppendCertsFromPEM(cert); !ok {
-				return &output, fmt.Errorf("failed to append custom CA cert to pool")
+				return output, fmt.Errorf("failed to append custom CA cert to pool")
 			}
 		} else {
 			if output.TLSClientConfig.RootCAs == nil {
@@ -347,12 +480,12 @@ func (c *CommandAuthConfig) BuildTransport() (*http.Transport, error) {
 			}
 			// Append your custom cert to the pool
 			if ok := output.TLSClientConfig.RootCAs.AppendCertsFromPEM([]byte(c.CommandCACert)); !ok {
-				return &output, fmt.Errorf("failed to append custom CA cert to pool")
+				return output, fmt.Errorf("failed to append custom CA cert to pool")
 			}
 		}
 	}
 
-	return &output, nil
+	return output, nil
 }
 
 // SetClient sets the http Client for authentication to Keyfactor Command API.
@@ -365,27 +498,12 @@ func (c *CommandAuthConfig) SetClient(client *http.Client) *http.Client {
 		//defaultTransport := http.DefaultTransport.(*http.Transport).Clone()
 		////defaultTransport.TLSClientConfig = tlsConfig
 		//c.HttpClient = &http.Client{Transport: defaultTransport}
-		defaultTimeout := time.Duration(c.HttpClientTimeout) * time.Second
+		// Shares its transport construction (and, critically, the fixed
+		// IdleConnTimeout/ExpectContinueTimeout/TLSHandshakeTimeout defaults)
+		// with BuildTransport() via newHTTPTransport() -- see its doc comment
+		// for why those must not scale with HttpClientTimeout.
 		c.HttpClient = &http.Client{
-			Transport: &http.Transport{
-				Proxy: http.ProxyFromEnvironment,
-				TLSClientConfig: &tls.Config{
-					Renegotiation: tls.RenegotiateOnceAsClient,
-				},
-				TLSHandshakeTimeout:    defaultTimeout,
-				DisableKeepAlives:      false,
-				DisableCompression:     false,
-				MaxIdleConns:           10,
-				MaxIdleConnsPerHost:    10,
-				MaxConnsPerHost:        10,
-				IdleConnTimeout:        defaultTimeout,
-				ResponseHeaderTimeout:  defaultTimeout,
-				ExpectContinueTimeout:  defaultTimeout,
-				MaxResponseHeaderBytes: 0,
-				WriteBufferSize:        0,
-				ReadBufferSize:         0,
-				ForceAttemptHTTP2:      false,
-			},
+			Transport: c.newHTTPTransport(),
 		}
 	}
 
@@ -708,6 +826,9 @@ func (c *CommandAuthConfig) LoadConfig(profile string, configFilePath string, si
 	if !c.SkipVerify {
 		c.SkipVerify = server.SkipTLSVerify
 	}
+	if c.HttpClientTimeout <= 0 {
+		c.HttpClientTimeout = server.ClientTimeout
+	}
 
 	//if !silentLoad {
 	//	c.CommandHostName = server.Host
@@ -764,6 +885,16 @@ func (c *CommandAuthConfig) GetServerConfig() *Server {
 		CACertPath:    c.CommandCACert,
 		AuthType:      "",
 	}
+	// Never persist a timeout the user never chose. If ValidateAuthConfig
+	// synthesized HttpClientTimeout from DefaultClientTimeout because nothing
+	// else was configured, leave Server.ClientTimeout at its zero value (and
+	// therefore omitted by its `omitempty` JSON/YAML tag) rather than writing
+	// out a value that would masquerade as an explicit file-configured
+	// setting -- and therefore permanently shadow KEYFACTOR_CLIENT_TIMEOUT --
+	// on the next load. See clientTimeoutDefaulted's doc comment.
+	if !c.clientTimeoutDefaulted {
+		server.ClientTimeout = c.HttpClientTimeout
+	}
 	return &server
 }
 
@@ -792,6 +923,286 @@ type contextKey string
 //			fmt.Println("Authentication successful")
 //		}
 //	}
+
+// redactedPlaceholder replaces the value of any sensitive field before a
+// request body is rendered into a shareable curl command or written to a
+// log. It is intentionally distinctive so it can never be mistaken for real
+// data.
+const redactedPlaceholder = "***REDACTED***"
+
+// sensitiveBodyKeys is the set of JSON/form field names -- matched
+// case-insensitively -- whose values must never be written to a log or a
+// generated curl command. This covers the Keyfactor Command API's
+// credential-bearing request fields (certificate enrollment/PFX passwords,
+// PAM secret values, etc.) as well as common OAuth2 token exchange fields.
+//
+// "value" is deliberately blanket-redacted rather than only when nested under
+// a credential-bearing parent key (e.g. PAM's ProviderTypeParamValues): it is
+// how PAM provider creation carries its secret
+// (ProviderCreateRequestTypeParamValue.Value), and this redactor walks
+// structure generically without tracking which object it's currently inside,
+// so a parent-key allowlist would need its own maintenance burden and would
+// still miss any future generic-"Value" secret field. "value" as a bare key
+// name is not common enough elsewhere in the Command API surface to justify
+// that risk, and the surrounding key names (e.g. the parameter name and
+// ProviderTypeParamValues itself) remain visible, so little diagnostic value
+// is actually lost.
+//
+// "properties" is deliberately NOT in this set: certificate stores serialize
+// their entire (mostly non-secret) Properties map into a single JSON-encoded
+// string field, and blanket-redacting it would hide store configuration
+// (container names, client machine paths, etc.) that's routinely needed for
+// diagnostics. Instead, redactJSONValue re-parses JSON-encoded string values
+// (see below) and redacts sensitive keys *within* Properties, preserving the
+// rest of its structure.
+var sensitiveBodyKeys = map[string]struct{}{
+	"password":                {},
+	"pfxpassword":             {},
+	"keypassword":             {},
+	"entrypassword":           {},
+	"explicitpassword":        {},
+	"authcertificatepassword": {},
+	"newpassword":             {},
+	"serverpassword":          {},
+	"storepassword":           {},
+	"relaypassword":           {},
+	"passphrase":              {},
+	"privatekey":              {},
+	"pkcs12blob":              {},
+	"secret":                  {},
+	"secretvalue":             {},
+	"value":                   {},
+	"clientsecret":            {},
+	"client_secret":           {},
+	"accesstoken":             {},
+	"access_token":            {},
+	"refreshtoken":            {},
+	"refresh_token":           {},
+	"apikey":                  {},
+	"api_key":                 {},
+}
+
+// isSensitiveBodyKey reports whether key names a field whose value should be
+// redacted before logging, matching case-insensitively.
+func isSensitiveBodyKey(key string) bool {
+	_, ok := sensitiveBodyKeys[strings.ToLower(key)]
+	return ok
+}
+
+const (
+	// maxNestedJSONStringDepth bounds how many levels of JSON-encoded-string
+	// nesting redactJSONValue will unwrap (e.g. a JSON body whose string
+	// field is itself a JSON document whose string field is itself JSON,
+	// and so on -- exactly how keyfactor-go-client encodes a certificate
+	// store's Properties map). This is unrelated to, and does not limit,
+	// ordinary object/array nesting depth; it only bounds re-parsing a
+	// string value as a fresh JSON document, which is what makes
+	// pathological/adversarial nesting expensive. It defends against a body
+	// crafted to smuggle a secret past redaction via deep string-in-string
+	// nesting.
+	maxNestedJSONStringDepth = 6
+
+	// maxNestedJSONStringLen bounds the size of a string value redactJSONValue
+	// will attempt to re-parse as nested JSON, so a single request log line
+	// can't be forced to do unbounded parsing work on an attacker-controlled
+	// multi-megabyte string.
+	maxNestedJSONStringLen = 1 << 20 // 1 MiB
+)
+
+// redactJSONValue walks a value decoded from JSON (map[string]interface{},
+// []interface{}, or a scalar) and returns a copy with the values of any
+// sensitive keys replaced by redactedPlaceholder. Structure (object/array
+// nesting) is preserved so the rest of the body remains useful for
+// diagnostics.
+//
+// String values that look like a JSON document (e.g. a certificate store's
+// Properties field, which keyfactor-go-client marshals into a JSON-encoded
+// string rather than a nested object) are recursively re-parsed and redacted
+// the same way, up to maxNestedJSONStringDepth levels deep -- otherwise a
+// sensitive field nested inside such a string would never be inspected at
+// all, since its key name is invisible until the string is parsed.
+func redactJSONValue(v interface{}) interface{} {
+	return redactJSONValueAtDepth(v, 0)
+}
+
+func redactJSONValueAtDepth(v interface{}, nestedStringDepth int) interface{} {
+	switch val := v.(type) {
+	case map[string]interface{}:
+		out := make(map[string]interface{}, len(val))
+		for k, vv := range val {
+			if isSensitiveBodyKey(k) {
+				out[k] = redactedPlaceholder
+				continue
+			}
+			out[k] = redactJSONValueAtDepth(vv, nestedStringDepth)
+		}
+		return out
+	case []interface{}:
+		out := make([]interface{}, len(val))
+		for i, vv := range val {
+			out[i] = redactJSONValueAtDepth(vv, nestedStringDepth)
+		}
+		return out
+	case string:
+		return redactNestedJSONString(val, nestedStringDepth)
+	default:
+		return val
+	}
+}
+
+// utf8BOM is the UTF-8 encoding of U+FEFF, the Unicode byte-order mark.
+// Files/values authored on Windows (e.g. a PAM/orchestrator service-account
+// JSON key embedded in a Properties map value) commonly carry a leading BOM.
+const utf8BOM = "\uFEFF"
+
+// stripLeadingBOM removes a leading UTF-8 byte-order-mark from s, if present.
+// strings.TrimSpace does not do this: unicode.IsSpace deliberately does not
+// treat U+FEFF as whitespace (it's a formatting character, not a space), so a
+// BOM-prefixed JSON document survives TrimSpace untouched. Both
+// looksLikeJSONDocument's outermost-byte check and redactNestedJSONString's
+// actual json.Unmarshal call need the BOM stripped first: encoding/json does
+// not tolerate a leading BOM either (json.Valid/json.Unmarshal reject it, not
+// silently skip it -- verified empirically), so stripping it explicitly is
+// required here, not merely one option among equally-robust choices.
+func stripLeadingBOM(s string) string {
+	return strings.TrimPrefix(s, utf8BOM)
+}
+
+// looksLikeJSONDocument reports whether s is plausibly a JSON object or
+// array, based solely on its outermost delimiters. It is intentionally cheap
+// and permissive (an unbalanced-but-bracketed string will still attempt to
+// parse and fail cleanly in redactNestedJSONString) so that every candidate
+// gets a real parse attempt rather than being skipped on a heuristic and
+// potentially leaking a secret verbatim. A leading byte-order-mark is
+// stripped first -- see stripLeadingBOM -- so a BOM-prefixed JSON document is
+// still recognized as JSON rather than silently treated as an opaque string
+// and never inspected for nested secrets at all.
+func looksLikeJSONDocument(s string) bool {
+	t := strings.TrimSpace(stripLeadingBOM(s))
+	if len(t) < 2 {
+		return false
+	}
+	return (t[0] == '{' && t[len(t)-1] == '}') || (t[0] == '[' && t[len(t)-1] == ']')
+}
+
+// redactNestedJSONString handles a single string value encountered while
+// walking a decoded JSON body. Strings that don't look like a JSON document
+// are left untouched. Strings that do are re-parsed and redacted like any
+// other JSON value and re-serialized -- unless doing so isn't safe (parse
+// failure, or the depth/size guards below are hit), in which case the whole
+// value is replaced with redactedPlaceholder rather than ever emitting a
+// string that looked like it might contain structured secret data.
+func redactNestedJSONString(s string, nestedStringDepth int) interface{} {
+	if !looksLikeJSONDocument(s) {
+		return s
+	}
+
+	if nestedStringDepth >= maxNestedJSONStringDepth {
+		log.Printf(
+			"[WARN] request body redaction: JSON-in-string nesting exceeded max depth %d; redacting the value entirely rather than risk an unredacted secret",
+			maxNestedJSONStringDepth,
+		)
+		return redactedPlaceholder
+	}
+	if len(s) > maxNestedJSONStringLen {
+		log.Printf(
+			"[WARN] request body redaction: JSON-in-string value exceeded %d bytes; redacting the value entirely rather than risk an unredacted secret",
+			maxNestedJSONStringLen,
+		)
+		return redactedPlaceholder
+	}
+
+	var parsed interface{}
+	// encoding/json rejects a leading BOM outright (json.Unmarshal returns an
+	// error rather than skipping it), so it must be stripped here too, not
+	// just in looksLikeJSONDocument's sniff above -- otherwise every
+	// BOM-prefixed value that reaches this point would always fail to parse
+	// and fall through to the whole-value redactedPlaceholder branch below,
+	// losing the surrounding key names' diagnostic value for no security
+	// benefit (the BOM carries no information worth preserving).
+	if err := json.Unmarshal([]byte(stripLeadingBOM(s)), &parsed); err != nil {
+		// Looks like JSON (balanced outer brackets) but doesn't actually
+		// parse -- could be a truncated or malformed secret-bearing
+		// fragment. Never emit it raw.
+		return redactedPlaceholder
+	}
+
+	redacted := redactJSONValueAtDepth(parsed, nestedStringDepth+1)
+	out, err := json.Marshal(redacted)
+	if err != nil {
+		return redactedPlaceholder
+	}
+	return string(out)
+}
+
+// opaqueBodyMarker renders the safe placeholder used whenever a request
+// body cannot be confidently classified (and therefore redacted) as JSON or
+// form-encoded. It deliberately omits the body content entirely rather than
+// guessing, since printing raw bytes here could leak a secret.
+func opaqueBodyMarker(contentType string, size int) string {
+	ct := contentType
+	if ct == "" {
+		ct = "unknown"
+	}
+	return fmt.Sprintf("<redacted: %d bytes, content-type %s>", size, ct)
+}
+
+// redactRequestBody renders a safe, loggable representation of an HTTP
+// request body for inclusion in a generated curl command. JSON bodies are
+// parsed and re-serialized with sensitive values replaced; form-encoded
+// bodies (e.g. OAuth2 client_credentials token requests carrying
+// client_secret) have sensitive form values replaced. Any body that can't be
+// safely classified -- including a body declared as JSON that fails to parse
+// -- is omitted entirely behind opaqueBodyMarker rather than risking a raw
+// secret leak.
+//
+// A field name being absent from sensitiveBodyKeys is not by itself proof a
+// value is safe to print: the Keyfactor Command API also carries secrets
+// inside ordinary JSON string values that are themselves JSON documents
+// (e.g. a certificate store's Properties field). redactJSONValue re-parses
+// and redacts those recursively (bounded by maxNestedJSONStringDepth/
+// maxNestedJSONStringLen) rather than treating a string as an opaque scalar,
+// so a sensitive key hidden inside such a string is still found and
+// redacted.
+func redactRequestBody(contentType string, body []byte) string {
+	if len(body) == 0 {
+		return ""
+	}
+
+	ct := strings.ToLower(contentType)
+
+	switch {
+	case strings.Contains(ct, "json"), ct == "" && json.Valid(body):
+		var parsed interface{}
+		if err := json.Unmarshal(body, &parsed); err != nil {
+			log.Printf("[ERROR] failed to parse request body declared as JSON for redaction: %v", err)
+			return opaqueBodyMarker(contentType, len(body))
+		}
+		redacted := redactJSONValue(parsed)
+		out, err := json.Marshal(redacted)
+		if err != nil {
+			log.Printf("[ERROR] failed to marshal redacted request body: %v", err)
+			return opaqueBodyMarker(contentType, len(body))
+		}
+		return string(out)
+	case strings.Contains(ct, "www-form-urlencoded"):
+		values, err := url.ParseQuery(string(body))
+		if err != nil {
+			log.Printf("[ERROR] failed to parse form-encoded request body for redaction: %v", err)
+			return opaqueBodyMarker(contentType, len(body))
+		}
+		for k := range values {
+			if isSensitiveBodyKey(k) {
+				values[k] = []string{redactedPlaceholder}
+			}
+		}
+		return values.Encode()
+	default:
+		// Unknown/opaque content type: never print raw bytes, since we can't
+		// confirm there's no secret buried in them.
+		return opaqueBodyMarker(contentType, len(body))
+	}
+}
 
 func RequestToCurl(req *http.Request) (string, error) {
 	var curlCommand strings.Builder
@@ -853,7 +1264,8 @@ func RequestToCurl(req *http.Request) (string, error) {
 			}
 			req.Body = io.NopCloser(bytes.NewBuffer(body)) // Restore the request body
 
-			curlCommand.WriteString(fmt.Sprintf("--data %q ", string(body)))
+			redactedBody := redactRequestBody(req.Header.Get("Content-Type"), body)
+			curlCommand.WriteString(fmt.Sprintf("--data %q ", redactedBody))
 		}
 	}
 
