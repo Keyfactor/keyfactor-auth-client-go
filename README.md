@@ -39,6 +39,32 @@ Currently `Basic Authentication` via `Active Directory` is the *ONLY* supported 
 | KEYFACTOR_AUTH_ACCESS_TOKEN  | Access token to use to authenticate to Keyfactor Command API. This can be supplied directly or generated via client credentials |          |
 | KEYFACTOR_AUTH_CA_CERT       | Either a file path or PEM encoded string to a CA certificate to use when connecting to Keyfactor Auth                           |          |
 
+#### Credential Precedence
+
+`CommandConfigOauth` supports three ways to obtain a token. If more than one is configured at the same time, the SDK does **not** raise an error -- it silently picks the highest-precedence one, in this order:
+
+1. **Static access token** -- `WithAccessToken(accessToken string)`, or `KEYFACTOR_AUTH_ACCESS_TOKEN` / a config file's `access_token`. Used exactly as given, with no refresh logic; the caller is responsible for the token remaining valid for as long as it's needed.
+2. **External token source** (Go API only -- see below) -- `WithExternalTokenSource(src oauth2.TokenSource)`. Takes precedence over client credentials, but not over a static access token.
+3. **Client credentials** -- `ClientID` + `ClientSecret` + `TokenURL` (directly, via environment variables, or via a config file profile). The standard OAuth2 `client_credentials` grant, used only when neither of the above is configured.
+
+If none of the three is configured, `ValidateAuthConfig`/`Authenticate`/`GetHttpClient`/`GetAccessToken` return an error. Because there is no conflict error between them, a leftover `ClientSecret` (e.g. from an old config file or an ambient environment variable) alongside an explicitly configured `WithAccessToken` or `WithExternalTokenSource` will be silently ignored rather than flagged -- keep that in mind when debugging an unexpected credential being used.
+
+#### External Token Source (Go API only)
+
+`WithExternalTokenSource` lets a caller supply their own [`oauth2.TokenSource`](https://pkg.go.dev/golang.org/x/oauth2#TokenSource) instead of configuring `ClientID`/`ClientSecret`/`TokenURL`. There is no environment variable or config file equivalent -- it's set programmatically. This is intended for ambient/workload-identity credential providers (cloud platform managed identity, workload identity federation, etc.) where the caller already has a mechanism for obtaining a Command access token and no static secret should exist at all:
+
+```go
+config := auth_providers.NewOAuthAuthenticatorBuilder()
+config.WithExternalTokenSource(myTokenSource) // any golang.org/x/oauth2.TokenSource
+config.WithCommandHostName("command.example.com")
+```
+
+Behavior to be aware of:
+
+- The SDK wraps the supplied source in `oauth2.ReuseTokenSourceWithExpiry` (30-second buffer) when building an HTTP client via `GetHttpClient`/`Authenticate`, so `Token()` is not called on every outgoing request -- only when there is no cached token or the cached one is within 30 seconds of expiring. **The supplied source must set an accurate `Expiry` on every token it returns**; a token with a zero `Expiry` is treated as never expiring by `oauth2.Token` and will be cached indefinitely.
+- `GetAccessToken()` calls the supplied source directly on every call instead (no caching), matching how that method already treats the client-credentials flow as a one-shot fetch.
+- This SDK does not enforce a timeout on the supplied source's `Token()` call the way it does for its own client-credentials token fetches -- `oauth2.TokenSource` has no `context.Context` parameter, so the source implementation is responsible for its own reasonable timeout/cancellation behavior.
+
 ### Kerberos/SPNEGO Authentication
 
 Kerberos authentication supports three methods: credential cache (ccache), keytab file, or username/password. The authentication method is determined automatically based on which credentials are provided, with the following priority: ccache > keytab > password.
