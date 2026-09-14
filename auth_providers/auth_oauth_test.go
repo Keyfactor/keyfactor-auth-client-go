@@ -352,27 +352,21 @@ func TestCommandConfigOauth_Authenticate(t *testing.T) {
 
 	t.Log("Testing oAuth with no Environmental variables")
 	incompleteEnvConfig := &auth_providers.CommandConfigOauth{}
-	incompleteEnvConfigExpectedError := fmt.Sprintf(
-		"client ID or environment variable %s is required",
-		auth_providers.EnvKeyfactorClientID,
-	)
+	incompleteEnvConfigExpectedError := auth_providers.ErrMissingClientCredentials
 	authOauthTest(
 		t,
 		"with incomplete Environmental variables",
 		true,
 		incompleteEnvConfig,
-		incompleteEnvConfigExpectedError,
+		incompleteEnvConfigExpectedError.Error(),
 	)
 
 	t.Log("Testing auth with only clientID")
 	clientIDOnlyConfig := &auth_providers.CommandConfigOauth{
 		ClientID: "test-client-id",
 	}
-	clientIDOnlyConfigExceptedError := fmt.Sprintf(
-		"client secret or environment variable %s is required",
-		auth_providers.EnvKeyfactorClientSecret,
-	)
-	authOauthTest(t, "clientID only", true, clientIDOnlyConfig, clientIDOnlyConfigExceptedError)
+	clientIDOnlyConfigExceptedError := auth_providers.ErrMissingClientCredentials
+	authOauthTest(t, "clientID only", true, clientIDOnlyConfig, clientIDOnlyConfigExceptedError.Error())
 
 	t.Log("Testing auth with w/ full params variables")
 	fullParamsConfig := &auth_providers.CommandConfigOauth{
@@ -400,11 +394,8 @@ func TestCommandConfigOauth_Authenticate(t *testing.T) {
 		ClientID:     clientID,
 		ClientSecret: clientSecret,
 	}
-	noTokenURLExpectedError := fmt.Sprintf(
-		"token URL or environment variable %s is required",
-		auth_providers.EnvKeyfactorAuthTokenURL,
-	)
-	authOauthTest(t, "w/ no tokenURL", true, noTokenURLConfig, noTokenURLExpectedError)
+	noTokenURLExpectedError := auth_providers.ErrMissingClientCredentials
+	authOauthTest(t, "w/ no tokenURL", true, noTokenURLConfig, noTokenURLExpectedError.Error())
 
 	// Write the config file back
 	t.Logf("Writing config file: %s", configFilePath)

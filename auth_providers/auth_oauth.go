@@ -64,6 +64,10 @@ var (
 	DefaultScopes []string
 )
 
+var (
+	ErrMissingClientCredentials = fmt.Errorf("client ID, client secret, and token URL are required if access token or static token source is not provided. Please provide these values directly or populate environment variables %s, %s, and %s", EnvKeyfactorClientID, EnvKeyfactorClientSecret, EnvKeyfactorAuthTokenURL)
+)
+
 // OAuth Authenticator
 var _ Authenticator = &OAuthAuthenticator{}
 
@@ -215,6 +219,12 @@ type CommandConfigOauth struct {
 	// TokenURL is the token URL for OAuth authentication
 	TokenURL string `json:"token_url,omitempty" yaml:"token_url,omitempty"`
 
+	// ExternalTokenSource, when set, supplies access token from a caller-provided
+	// oauth2.TokenSource instead of any credential-based flow this SDK manages itself.
+	// Intended for ambient / workload identity credential providers where the caller
+	// already has a token-producing mechanism
+	ExternalTokenSource oauth2.TokenSource `json:"-" yaml:"-"`
+
 	// unexported: lazily initialized, shared across GetHttpClient() calls
 	tokenSource oauth2.TokenSource
 	tsMu        sync.Mutex
@@ -276,6 +286,11 @@ func (b *CommandConfigOauth) WithAccessToken(accessToken string) *CommandConfigO
 	return b
 }
 
+func (b *CommandConfigOauth) WithExternalTokenSource(src oauth2.TokenSource) *CommandConfigOauth {
+	b.ExternalTokenSource = src
+	return b
+}
+
 func (b *CommandConfigOauth) WithHttpClient(httpClient *http.Client) *CommandConfigOauth {
 	b.HttpClient = httpClient
 	return b
@@ -294,6 +309,7 @@ func (b *CommandConfigOauth) GetHttpClient() (*http.Client, error) {
 		return nil, tErr
 	}
 
+	// If an access token is provided directly, use it for the HTTP client instead of fetching a new one.
 	if b.AccessToken != "" {
 		client.Transport = &oauth2.Transport{
 			Base: baseTransport,
@@ -339,12 +355,19 @@ func (b *CommandConfigOauth) GetHttpClient() (*http.Client, error) {
 	// is actually required (initial fetch, or refresh after expiry).
 	b.tsMu.Lock()
 	if b.tokenSource == nil {
-		log.Printf("[DEBUG] Initializing OAuth2 token source for client ID: %s", b.ClientID)
-		b.tokenSource = oauth2.ReuseTokenSource(nil, &boundedClientCredentialsTokenSource{
-			config:            config,
-			baseTransport:     baseTransport,
-			httpClientTimeout: b.HttpClientTimeout,
-		})
+		if b.ExternalTokenSource != nil {
+			// Use the caller-supplied external token source, wrapping it with a buffer to ensure tokens are refreshed slightly before they expire.
+			buffer := time.Second * 30
+			log.Printf("[DEBUG] Initializing OAuth2 token source from external token source with a %.0f second expiration buffer", buffer.Seconds())
+			b.tokenSource = oauth2.ReuseTokenSourceWithExpiry(nil, b.ExternalTokenSource, buffer)
+		} else {
+			log.Printf("[DEBUG] Initializing OAuth2 token source for client ID: %s", b.ClientID)
+			b.tokenSource = oauth2.ReuseTokenSource(nil, &boundedClientCredentialsTokenSource{
+				config:            config,
+				baseTransport:     baseTransport,
+				httpClientTimeout: b.HttpClientTimeout,
+			})
+		}
 	}
 	tokenSource := b.tokenSource
 	b.tsMu.Unlock()
@@ -444,50 +467,44 @@ func (b *CommandConfigOauth) ValidateAuthConfig() error {
 		// check if access token is set in the environment
 		if accessToken, ok := os.LookupEnv(EnvKeyfactorAccessToken); ok {
 			b.AccessToken = accessToken
+		}
+	}
+
+	if b.ClientID == "" {
+		if clientId, idOk := os.LookupEnv(EnvKeyfactorClientID); idOk {
+			b.ClientID = clientId
 		} else {
-			// check if client ID, client secret, and token URL are provided
-			if b.ClientID == "" {
-				if clientId, idOk := os.LookupEnv(EnvKeyfactorClientID); idOk {
-					b.ClientID = clientId
-				} else {
-					if serverConfig != nil && serverConfig.ClientID != "" {
-						b.ClientID = serverConfig.ClientID
-					} else {
-						return fmt.Errorf("client ID or environment variable %s is required", EnvKeyfactorClientID)
-					}
-				}
-			}
-
-			if b.ClientSecret == "" {
-				if clientSecret, sOk := os.LookupEnv(EnvKeyfactorClientSecret); sOk {
-					b.ClientSecret = clientSecret
-				} else {
-					if serverConfig != nil && serverConfig.ClientSecret != "" {
-						b.ClientSecret = serverConfig.ClientSecret
-					} else {
-						return fmt.Errorf(
-							"client secret or environment variable %s is required",
-							EnvKeyfactorClientSecret,
-						)
-					}
-				}
-			}
-
-			if b.TokenURL == "" {
-				if tokenUrl, uOk := os.LookupEnv(EnvKeyfactorAuthTokenURL); uOk {
-					b.TokenURL = tokenUrl
-				} else {
-					if serverConfig != nil && serverConfig.OAuthTokenUrl != "" {
-						b.TokenURL = serverConfig.OAuthTokenUrl
-					} else {
-						return fmt.Errorf(
-							"token URL or environment variable %s is required",
-							EnvKeyfactorAuthTokenURL,
-						)
-					}
-				}
+			if serverConfig != nil && serverConfig.ClientID != "" {
+				b.ClientID = serverConfig.ClientID
 			}
 		}
+	}
+
+	if b.ClientSecret == "" {
+		if clientSecret, sOk := os.LookupEnv(EnvKeyfactorClientSecret); sOk {
+			b.ClientSecret = clientSecret
+		} else {
+			if serverConfig != nil && serverConfig.ClientSecret != "" {
+				b.ClientSecret = serverConfig.ClientSecret
+			}
+		}
+	}
+
+	if b.TokenURL == "" {
+		if tokenUrl, uOk := os.LookupEnv(EnvKeyfactorAuthTokenURL); uOk {
+			b.TokenURL = tokenUrl
+		} else {
+			if serverConfig != nil && serverConfig.OAuthTokenUrl != "" {
+				b.TokenURL = serverConfig.OAuthTokenUrl
+			}
+		}
+	}
+
+	allClientCredentialsProvided := b.ClientID != "" && b.ClientSecret != "" && b.TokenURL != ""
+
+	// Ensure that either all client credentials are provided or an access token/external token source is available.
+	if !allClientCredentialsProvided && (b.AccessToken == "" && b.ExternalTokenSource == nil) {
+		return ErrMissingClientCredentials
 	}
 
 	if b.Audience == "" {
@@ -557,6 +574,7 @@ func (b *CommandConfigOauth) GetServerConfig() *Server {
 	server.ClientID = b.ClientID
 	server.ClientSecret = b.ClientSecret
 	server.AccessToken = b.AccessToken
+	server.ExternalTokenSource = b.ExternalTokenSource
 	server.OAuthTokenUrl = b.TokenURL
 	server.Scopes = b.Scopes
 	server.Audience = b.Audience
@@ -580,6 +598,23 @@ func (b *CommandConfigOauth) GetAccessToken() (*oauth2.Token, error) {
 			TokenType:   DefaultTokenPrefix,
 			Expiry:      b.Expiry,
 		}, nil
+	}
+
+	if b.ExternalTokenSource != nil {
+		// Unlike GetHttpClient(), this is a single one-shot fetch with no shared cache to
+		// consult or populate (the client_credentials branch below is the same: it builds a
+		// fresh clientcredentials.Config and fetches every call), so this calls straight
+		// through to the caller-supplied source rather than going through the
+		// oauth2.ReuseTokenSourceWithExpiry wrapper GetHttpClient() builds into b.tokenSource.
+		log.Printf("[DEBUG] Fetching OAuth2 token from external token source")
+		token, tErr := b.ExternalTokenSource.Token()
+		if tErr != nil {
+			return nil, fmt.Errorf("failed to retrieve token from external token source: %w", tErr)
+		}
+		if token == nil || token.AccessToken == "" {
+			return nil, fmt.Errorf("received empty OAuth token from external token source")
+		}
+		return token, nil
 	}
 
 	log.Printf("[DEBUG] Getting OAuth2 token source for client ID: %s", b.ClientID)

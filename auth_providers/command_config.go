@@ -19,28 +19,30 @@ import (
 	"fmt"
 	"os"
 
+	"golang.org/x/oauth2"
 	"gopkg.in/yaml.v2"
 )
 
 // Server represents the server configuration for authentication.
 type Server struct {
-	Host          string       `json:"host,omitempty" yaml:"host,omitempty"`                       // Host is the Command server DNS name or IP address.
-	Port          int          `json:"port,omitempty" yaml:"port,omitempty"`                       // Port is the Command server port.
-	Username      string       `json:"username,omitempty" yaml:"username,omitempty"`               // Username is the username for authentication.
-	Password      string       `json:"password,omitempty" yaml:"password,omitempty"`               // Password is the password for authentication.
-	Domain        string       `json:"domain,omitempty" yaml:"domain,omitempty"`                   // Domain is the domain for authentication.
-	ClientID      string       `json:"client_id,omitempty" yaml:"client_id,omitempty"`             // ClientID is the client ID for OAuth.
-	ClientSecret  string       `json:"client_secret,omitempty" yaml:"client_secret,omitempty"`     // ClientSecret is the client secret for OAuth.
-	AccessToken   string       `json:"access_token,omitempty" yaml:"access_token,omitempty"`       // AccessToken is the OAuth access token.
-	Scopes        []string     `json:"scopes,omitempty" yaml:"scopes,omitempty"`                   // Scopes is the OAuth scopes.
-	Audience      string       `json:"audience,omitempty" yaml:"audience,omitempty"`               // Audience is the OAuth audience.
-	OAuthTokenUrl string       `json:"token_url,omitempty" yaml:"token_url,omitempty"`             // OAuthTokenUrl is full URL for OAuth token request endpoint.
-	APIPath       string       `json:"api_path,omitempty" yaml:"api_path,omitempty"`               // APIPath is the API path.
-	AuthProvider  AuthProvider `json:"auth_provider,omitempty" yaml:"auth_provider,omitempty"`     // AuthProvider contains the authentication provider details.
-	SkipTLSVerify bool         `json:"skip_tls_verify,omitempty" yaml:"skip_tls_verify,omitempty"` // TLSVerify determines whether to verify the TLS certificate.
-	CACertPath    string       `json:"ca_cert_path,omitempty" yaml:"ca_cert_path,omitempty"`       // CACertPath is the path to the CA certificate to trust.
-	AuthType      string       `json:"auth_type,omitempty" yaml:"auth_type,omitempty"`             // AuthType is the type of authentication to use.
-	ClientTimeout int          `json:"client_timeout,omitempty" yaml:"client_timeout,omitempty"`   // ClientTimeout is the http Client timeout, in seconds, mirrored from CommandAuthConfig.HttpClientTimeout.
+	Host                string             `json:"host,omitempty" yaml:"host,omitempty"`                       // Host is the Command server DNS name or IP address.
+	Port                int                `json:"port,omitempty" yaml:"port,omitempty"`                       // Port is the Command server port.
+	Username            string             `json:"username,omitempty" yaml:"username,omitempty"`               // Username is the username for authentication.
+	Password            string             `json:"password,omitempty" yaml:"password,omitempty"`               // Password is the password for authentication.
+	Domain              string             `json:"domain,omitempty" yaml:"domain,omitempty"`                   // Domain is the domain for authentication.
+	ClientID            string             `json:"client_id,omitempty" yaml:"client_id,omitempty"`             // ClientID is the client ID for OAuth.
+	ClientSecret        string             `json:"client_secret,omitempty" yaml:"client_secret,omitempty"`     // ClientSecret is the client secret for OAuth.
+	AccessToken         string             `json:"access_token,omitempty" yaml:"access_token,omitempty"`       // AccessToken is the OAuth access token.
+	Scopes              []string           `json:"scopes,omitempty" yaml:"scopes,omitempty"`                   // Scopes is the OAuth scopes.
+	Audience            string             `json:"audience,omitempty" yaml:"audience,omitempty"`               // Audience is the OAuth audience.
+	OAuthTokenUrl       string             `json:"token_url,omitempty" yaml:"token_url,omitempty"`             // OAuthTokenUrl is full URL for OAuth token request endpoint.
+	ExternalTokenSource oauth2.TokenSource `json:"-" yaml:"-"`                                                 // ExternalTokenSource is the external token source for OAuth.
+	APIPath             string             `json:"api_path,omitempty" yaml:"api_path,omitempty"`               // APIPath is the API path.
+	AuthProvider        AuthProvider       `json:"auth_provider,omitempty" yaml:"auth_provider,omitempty"`     // AuthProvider contains the authentication provider details.
+	SkipTLSVerify       bool               `json:"skip_tls_verify,omitempty" yaml:"skip_tls_verify,omitempty"` // TLSVerify determines whether to verify the TLS certificate.
+	CACertPath          string             `json:"ca_cert_path,omitempty" yaml:"ca_cert_path,omitempty"`       // CACertPath is the path to the CA certificate to trust.
+	AuthType            string             `json:"auth_type,omitempty" yaml:"auth_type,omitempty"`             // AuthType is the type of authentication to use.
+	ClientTimeout       int                `json:"client_timeout,omitempty" yaml:"client_timeout,omitempty"`   // ClientTimeout is the http Client timeout, in seconds, mirrored from CommandAuthConfig.HttpClientTimeout.
 
 	// Kerberos authentication fields
 	KerberosRealm  string `json:"kerberos_realm,omitempty" yaml:"kerberos_realm,omitempty"`   // KerberosRealm is the Kerberos realm (uppercase).
@@ -219,6 +221,7 @@ func (s *Server) Compare(other *Server) bool {
 		s.ClientSecret == other.ClientSecret &&
 		s.AccessToken == other.AccessToken &&
 		s.OAuthTokenUrl == other.OAuthTokenUrl &&
+		s.ExternalTokenSource == other.ExternalTokenSource &&
 		s.APIPath == other.APIPath &&
 		s.SkipTLSVerify == other.SkipTLSVerify &&
 		s.CACertPath == other.CACertPath &&
@@ -264,7 +267,7 @@ func MergeConfigFromFile(filePath string, config *Config) (*Config, error) {
 
 // GetAuthType returns the type of authentication to use based on the configuration params.
 func (s *Server) GetAuthType() string {
-	if (s.ClientID != "" && s.ClientSecret != "") || s.AccessToken != "" {
+	if (s.ClientID != "" && s.ClientSecret != "") || s.AccessToken != "" || s.ExternalTokenSource != nil {
 		s.AuthType = "oauth"
 	} else if s.KerberosRealm != "" || s.KerberosKeytab != "" || s.KerberosCCache != "" {
 		s.AuthType = "kerberos"
@@ -333,6 +336,7 @@ func (s *Server) GetOAuthClientConfig() (*CommandConfigOauth, error) {
 		WithTokenUrl(s.OAuthTokenUrl).
 		WithScopes(s.Scopes).
 		WithAudience(s.Audience).
+		WithExternalTokenSource(s.ExternalTokenSource).
 		Build()
 
 	vErr := oauthConfig.ValidateAuthConfig()
