@@ -1,3 +1,11 @@
+# v1.5.1
+## Features
+- Add support for external token source in OAuth2 client config.
+
+# v1.5.0
+## Features
+- Add support for Kerberos authentication 
+
 # v1.3.1
 ## Fixes
 - Reuse OAuth2 token source to prevent unnecessary token fetches for each request.
