@@ -170,7 +170,28 @@ func cleanHostName(hostName string) string {
 	return hostName
 }
 
+// parseHostPort splits a "hostname:port" string into its parts.
+// If no port is present, returns the hostname and 0.
+func parseHostPort(hostName string) (string, int) {
+	if idx := strings.LastIndex(hostName, ":"); idx != -1 {
+		portStr := hostName[idx+1:]
+		port := 0
+		for _, c := range portStr {
+			if c < '0' || c > '9' {
+				return hostName, 0
+			}
+			port = port*10 + int(c-'0')
+		}
+		if port > 0 {
+			return hostName[:idx], port
+		}
+	}
+	return hostName, 0
+}
+
 // WithCommandHostName sets the hostname for authentication to Keyfactor Command API.
+// If hostName contains a port (e.g. "host:9443"), the port is extracted and applied
+// via WithCommandPort so the SDK does not double-append a port to the URL.
 func (c *CommandAuthConfig) WithCommandHostName(hostName string) *CommandAuthConfig {
 
 	//check for http or https prefix
@@ -179,7 +200,13 @@ func (c *CommandAuthConfig) WithCommandHostName(hostName string) *CommandAuthCon
 	}
 
 	hostName = cleanHostName(hostName)
-	c.CommandHostName = hostName
+	host, port := parseHostPort(hostName)
+	if port > 0 {
+		c.CommandHostName = host
+		c.CommandPort = port
+	} else {
+		c.CommandHostName = hostName
+	}
 	return c
 }
 
@@ -485,11 +512,14 @@ func (c *CommandAuthConfig) Authenticate() error {
 		headers["Authorization"] = c.AuthHeader
 	}
 
+	authHost := c.CommandHostName
+	if c.CommandPort > 0 && c.CommandPort != DefaultCommandPort {
+		authHost = fmt.Sprintf("%s:%d", c.CommandHostName, c.CommandPort)
+	}
 	endPoint := fmt.Sprintf(
 		"%s://%s/%s/Status/Endpoints",
 		c.HttpProtocol,
-		c.CommandHostName,
-		//c.CommandPort,
+		authHost,
 		c.CommandAPIPath,
 	)
 	log.Printf("[DEBUG] testing auth using endpoint %s ", endPoint)
@@ -763,6 +793,7 @@ func (c *CommandAuthConfig) GetServerConfig() *Server {
 		SkipTLSVerify: c.SkipVerify,
 		CACertPath:    c.CommandCACert,
 		AuthType:      "",
+		ClientTimeout: c.HttpClientTimeout,
 	}
 	return &server
 }

@@ -41,6 +41,11 @@ type Server struct {
 	CACertPath    string       `json:"ca_cert_path,omitempty" yaml:"ca_cert_path,omitempty"`       // CACertPath is the path to the CA certificate to trust.
 	AuthType      string       `json:"auth_type,omitempty" yaml:"auth_type,omitempty"`             // AuthType is the type of authentication to use.
 
+	// ClientTimeout is the HTTP client timeout in seconds. When zero, kfc-auth
+	// falls back to the KEYFACTOR_CLIENT_TIMEOUT env var or a built-in
+	// default. Maps to CommandAuthConfig.HttpClientTimeout.
+	ClientTimeout int `json:"client_timeout,omitempty" yaml:"client_timeout,omitempty"`
+
 	// Kerberos authentication fields
 	KerberosRealm  string `json:"kerberos_realm,omitempty" yaml:"kerberos_realm,omitempty"`   // KerberosRealm is the Kerberos realm (uppercase).
 	KerberosKeytab string `json:"kerberos_keytab,omitempty" yaml:"kerberos_keytab,omitempty"` // KerberosKeytab is the path to the keytab file.

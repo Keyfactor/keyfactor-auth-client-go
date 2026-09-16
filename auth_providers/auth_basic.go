@@ -255,6 +255,7 @@ func (a *CommandAuthConfigBasic) GetServerConfig() *Server {
 		SkipTLSVerify: a.SkipVerify,
 		CACertPath:    a.CommandCACert,
 		AuthType:      "basic",
+		ClientTimeout: a.HttpClientTimeout,
 	}
 	return &server
 }

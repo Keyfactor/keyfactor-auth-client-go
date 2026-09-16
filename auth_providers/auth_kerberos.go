@@ -443,6 +443,7 @@ func (k *CommandAuthConfigKerberos) GetServerConfig() *Server {
 		SkipTLSVerify:  k.SkipVerify,
 		CACertPath:     k.CommandCACert,
 		AuthType:       "kerberos",
+		ClientTimeout:  k.HttpClientTimeout,
 		KerberosRealm:  k.Realm,
 		KerberosKeytab: k.KeytabPath,
 		KerberosConfig: k.ConfigPath,
